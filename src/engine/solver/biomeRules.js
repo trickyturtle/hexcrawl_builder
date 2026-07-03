@@ -10,9 +10,9 @@ export const BIOME_ADJACENCY = {
   planar:      { temperate: 0.2, coastal: 0.2, cold: 0.3, tropical: 0.3, arid: 0.4,  underground: 0.5, magical: 0.8, planar: 1   },
 }
 
-// At weirndesseFactor=0 threshold is 0.5; at 10 threshold drops to 0 (anything goes)
-export function validateBiomeAdjacency(biomeA, biomeB, weirndesseFactor) {
+// At weirdnessFactor=0 threshold is 0.5; at 10 threshold drops to 0 (anything goes)
+export function validateBiomeAdjacency(biomeA, biomeB, weirdnessFactor) {
   const score = BIOME_ADJACENCY[biomeA]?.[biomeB] ?? 0.5
-  const threshold = 0.5 * (1 - weirndesseFactor / 10)
+  const threshold = 0.5 * (1 - weirdnessFactor / 10)
   return score >= threshold
 }

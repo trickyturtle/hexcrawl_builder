@@ -26,7 +26,7 @@ function extractForm(ws) {
     dangerDistribution: ws.dangerDistribution,
     magicDensity: ws.magicDensity,
     ageOfWorld: ws.ageOfWorld,
-    weirndesseFactor: ws.weirndesseFactor,
+    weirdnessFactor: ws.weirdnessFactor,
     biomeDistribution: { ...ws.biomeDistribution },
     systemPreset: ws.systemPreset,
     travelSpeedAssumptions: { ...ws.travelSpeedAssumptions },
@@ -282,11 +282,11 @@ export default function MapSetupForm({ onRegenerate }) {
             <Field label="Age of World">
               <SegmentedControl options={AGE_OPTS} value={form.ageOfWorld} onChange={(v) => set('ageOfWorld', v)} wrap />
             </Field>
-            <Field label={`Weirdness Factor — ${form.weirndesseFactor}/10`}>
+            <Field label={`Weirdness Factor — ${form.weirdnessFactor}/10`}>
               <input
                 type="range" min={0} max={10} step={1}
-                value={form.weirndesseFactor}
-                onChange={(e) => set('weirndesseFactor', Number(e.target.value))}
+                value={form.weirdnessFactor}
+                onChange={(e) => set('weirdnessFactor', Number(e.target.value))}
                 className="w-full accent-blue-500"
               />
               <div className="flex justify-between text-[10px] text-slate-600 mt-0.5">
@@ -294,7 +294,7 @@ export default function MapSetupForm({ onRegenerate }) {
                 <span>Weird</span>
               </div>
               <p className="text-[10px] text-slate-600 mt-1">
-                {WEIRDNESS_DESC[form.weirndesseFactor] ?? ''}
+                {WEIRDNESS_DESC[form.weirdnessFactor] ?? ''}
               </p>
             </Field>
           </>

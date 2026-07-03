@@ -12,7 +12,7 @@ export const useWorldStore = create((set) => ({
   dangerDistribution: 'even',
   magicDensity: 'low',
   ageOfWorld: 'mature',
-  weirndesseFactor: 2,
+  weirdnessFactor: 2,
   biomeDistribution: {},
   systemPreset: 'OSR',
   travelSpeedAssumptions: { ...SYSTEM_PRESETS.OSR.travelSpeed },

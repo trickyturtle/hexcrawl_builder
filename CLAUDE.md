@@ -97,7 +97,7 @@ All parameters are optional unless noted.
 - `dangerDistribution` — `even`, `concentrated`, `peripheral`, `random`
 - `magicDensity` — `none`, `low`, `medium`, `high`, `wild`
 - `ageOfWorld` — `young`, `mature`, `ancient`, `post-apocalyptic` (affects ruin density, lost civs)
-- `weirndessFactor` — 0-10 scale, affects strictness of biome adjacency rules
+- `weirdnessFactor` — 0-10 scale, affects strictness of biome adjacency rules
 - `biomeDistribution` — preferred coverage percentages per biome type
 - `systemPreset` — one of the built-in system presets
 
@@ -209,7 +209,7 @@ The solver runs when a batch of modules is committed. It must:
 
 **Algorithm approach:** weighted constraint satisfaction with backtracking. Score candidate placements by soft constraint satisfaction, backtrack on hard constraint violations.
 
-**Biome adjacency rules** (strictness modulated by `weirndesseFactor`):
+**Biome adjacency rules** (strictness modulated by `weirdnessFactor`):
 - Cold biomes do not border hot/arid biomes without transition
 - Coastal biomes require actual coastline (ocean hexes)
 - Mountain biomes cluster
