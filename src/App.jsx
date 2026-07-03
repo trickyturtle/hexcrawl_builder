@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useWorldStore } from './store/worldStore.js'
 import { useHexStore } from './store/hexStore.js'
 import { useUiStore } from './store/uiStore.js'
@@ -70,6 +70,7 @@ export default function App() {
 
   const hasWorld = Object.keys(hexes).length > 0
   const fsSupported = isSupported()
+  const [confirmRegen, setConfirmRegen] = useState(false)
 
   // ── New World (accepts optional param override from MapSetupForm) ───────────
   const handleNewWorld = useCallback((overrideParams) => {
@@ -268,10 +269,21 @@ export default function App() {
           )}
 
           <button
-            onClick={handleNewWorld}
-            className="w-full px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm transition-colors"
+            onClick={() => {
+              // Regenerating an existing map wipes placements, fog, and event
+              // logs — require a second click to confirm. A fresh world doesn't.
+              if (hasWorld && !confirmRegen) { setConfirmRegen(true); return }
+              setConfirmRegen(false)
+              handleNewWorld()
+            }}
+            onMouseLeave={() => setConfirmRegen(false)}
+            className={`w-full px-3 py-1.5 rounded text-sm transition-colors ${
+              confirmRegen
+                ? 'bg-red-800 hover:bg-red-700 text-red-100'
+                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+            }`}
           >
-            {hasWorld ? 'Regenerate' : 'New World'}
+            {confirmRegen ? 'Confirm — wipes placements' : hasWorld ? 'Regenerate' : 'New World'}
           </button>
 
           {fsSupported ? (

@@ -65,8 +65,13 @@ export function applyBiomeAdjacency(hexes, weirdnessFactor = 2) {
         if (a === b) continue
 
         if (validateBiomeAdjacency(a, b, weirdnessFactor)) {
-          // Allowed at this weirdness — flag if only weirdness permits it
-          if (!validateBiomeAdjacency(a, b, 0)) {
+          // Allowed at this weirdness. Flag a dimensional anomaly only for
+          // genuinely incompatible pairings (score ≤ 0.25, e.g. tropical–cold,
+          // planar–temperate) — these survive smoothing only at weirdness ≥ 6.
+          // Borderline-natural pairs (desert next to plains, 0.4) are not
+          // anomalies, or default maps would be covered in markers.
+          const score = BIOME_ADJACENCY[a]?.[b] ?? 0.5
+          if (score <= 0.25) {
             patches[hex.id] = { ...patches[hex.id], anomaly: true }
             patches[nb.id] = { ...patches[nb.id], anomaly: true }
           }

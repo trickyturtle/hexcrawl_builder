@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { useWorldStore } from '../../store/worldStore.js'
+import { useHexStore } from '../../store/hexStore.js'
 import { SYSTEM_PRESETS, milesPerDayToHexes } from '../../data/presets/systemPresets.js'
 import { BIOME_TYPES } from '../../data/schemas/defaultSchemas.js'
 
@@ -37,9 +38,12 @@ export default function MapSetupForm({ onRegenerate }) {
   const worldStore = useWorldStore((s) => s)
   const setParams = useWorldStore((s) => s.setParams)
 
+  const hasWorld = useHexStore((s) => Object.keys(s.hexes).length > 0)
+
   const [form, setForm] = useState(() => extractForm(worldStore))
   const [section, setSection] = useState('Preset')
   const [dirty, setDirty] = useState(false)
+  const [confirmRegen, setConfirmRegen] = useState(false)
 
   const set = useCallback((key, value) => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -82,6 +86,9 @@ export default function MapSetupForm({ onRegenerate }) {
   }
 
   const handleApplyAndRegenerate = () => {
+    // Regenerating an existing map wipes placements — two-click confirm
+    if (hasWorld && !confirmRegen) { setConfirmRegen(true); return }
+    setConfirmRegen(false)
     const params = buildParams()
     setParams(params)
     setDirty(false)
@@ -351,9 +358,12 @@ export default function MapSetupForm({ onRegenerate }) {
       <div className="px-4 py-3 border-t border-slate-700/60 flex gap-2 flex-shrink-0">
         <button
           onClick={handleApplyAndRegenerate}
-          className="flex-1 px-3 py-1.5 rounded bg-blue-700 hover:bg-blue-600 text-white text-xs transition-colors"
+          onMouseLeave={() => setConfirmRegen(false)}
+          className={`flex-1 px-3 py-1.5 rounded text-white text-xs transition-colors ${
+            confirmRegen ? 'bg-red-800 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-600'
+          }`}
         >
-          Apply &amp; Regenerate
+          {confirmRegen ? 'Confirm — wipes placements' : hasWorld ? 'Apply & Regenerate' : 'Apply & Generate'}
         </button>
         <button
           onClick={handleApply}

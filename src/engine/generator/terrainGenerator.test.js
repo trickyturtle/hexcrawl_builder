@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateHexes, expandHexGrid, propagateTerrain } from './terrainGenerator.js'
+import { generateHexes, expandHexGrid, propagateTerrain, estimateHexesForModules } from './terrainGenerator.js'
 
 describe('generateHexes', () => {
   it('generates approximately hexCount hexes', () => {
@@ -91,18 +91,24 @@ describe('generateHexes — biome adjacency & anomalies', () => {
   it('never flags anomalies at weirdness 0', () => {
     const { hexes } = generateHexes({
       hexCount: 300, mapShape: 'rectangle', weirdnessFactor: 0,
-      biomeDistribution: { arid: 50, cold: 50 },
+      biomeDistribution: { tropical: 50, cold: 50 },
     })
     expect(hexes.every((h) => !h.anomaly)).toBe(true)
   })
 
-  it('flags weirdness-enabled rule breaks as dimensional anomalies', () => {
+  it('flags weirdness-enabled hard rule breaks as dimensional anomalies', () => {
     const { hexes } = generateHexes({
       hexCount: 300, mapShape: 'rectangle', weirdnessFactor: 10,
-      biomeDistribution: { arid: 50, cold: 50 },
+      biomeDistribution: { tropical: 50, cold: 50 },
     })
-    // arid–cold scores 0.3 (< 0.5): kept at weirdness 10, flagged
+    // tropical–cold scores 0.2 (≤ 0.25): kept at weirdness 10, flagged
     expect(hexes.some((h) => h.anomaly)).toBe(true)
+  })
+
+  it('does not flag borderline-natural pairings on a default-weirdness map', () => {
+    // desert next to plains (arid–temperate, 0.4) is mundane, not an anomaly
+    const { hexes } = generateHexes({ hexCount: 300, weirdnessFactor: 2 })
+    expect(hexes.every((h) => !h.anomaly)).toBe(true)
   })
 })
 
@@ -140,6 +146,28 @@ describe('generateHexes — danger & magic ratings', () => {
     })
     expect(hexes.some((h) => h.danger === 3)).toBe(true)
     expect(hexes.filter((h) => h.danger === 0).length).toBeGreaterThan(hexes.length * 0.3)
+  })
+})
+
+describe('estimateHexesForModules — environment transition buffer', () => {
+  const mod = (environment) => ({ name: 'M', footprint: 'single', environment })
+
+  it('requires more hexes for modules with no shared environment', () => {
+    const shared = estimateHexesForModules([mod(['forest']), mod(['forest', 'hills'])])
+    const disjoint = estimateHexesForModules([mod(['forest']), mod(['desert'])])
+    expect(disjoint.min).toBeGreaterThan(shared.min)
+  })
+
+  it('treats legacy string environments like arrays', () => {
+    const arrayForm = estimateHexesForModules([mod(['forest']), mod(['desert'])])
+    const stringForm = estimateHexesForModules([mod('forest'), mod('desert')])
+    expect(stringForm.min).toBe(arrayForm.min)
+  })
+
+  it('modules without environment tags add no transition buffer', () => {
+    const untagged = estimateHexesForModules([mod([]), mod([])])
+    const shared = estimateHexesForModules([mod(['forest']), mod(['forest'])])
+    expect(untagged.min).toBe(shared.min)
   })
 })
 

@@ -5,6 +5,9 @@ export const DEFAULT_MODULE = {
   pdfStartPage: 1,
   footprint: 'single',
   localeCount: 1,
+  // Environment tags (e.g. 'forest', 'coastal', 'underground') — used by map
+  // sizing to add transition space between modules with no shared environment
+  environment: [],
   explicitDistances: [],
   entryPoints: [],
   toneKeywords: [],
