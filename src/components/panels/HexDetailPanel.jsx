@@ -20,18 +20,19 @@ export default function HexDetailPanel({ hexId }) {
   const [assignQuery, setAssignQuery] = useState('')
   const [showAssign, setShowAssign] = useState(false)
 
-  if (!hex) return null
-
-  const hexEntities = (hex.entityIds ?? []).map((id) => entities[id]).filter(Boolean)
-
-  // Entities not yet in this hex, filtered by query
+  // Entities not yet in this hex, filtered by query.
+  // Hooks must run unconditionally — the null-hex early return comes after them.
   const assignCandidates = useMemo(() => {
     const q = assignQuery.toLowerCase()
     return Object.values(entities)
-      .filter((e) => !(hex.entityIds ?? []).includes(e.id))
+      .filter((e) => !(hex?.entityIds ?? []).includes(e.id))
       .filter((e) => !q || e.name?.toLowerCase().includes(q) || e.subclass?.toLowerCase().includes(q))
       .slice(0, 10)
-  }, [entities, hex.entityIds, assignQuery])
+  }, [entities, hex?.entityIds, assignQuery])
+
+  if (!hex) return null
+
+  const hexEntities = (hex.entityIds ?? []).map((id) => entities[id]).filter(Boolean)
 
   const assignEntity = (entityId) => {
     updateHex(hex.id, { entityIds: [...(hex.entityIds ?? []), entityId] })

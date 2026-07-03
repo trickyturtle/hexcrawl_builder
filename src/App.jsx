@@ -52,6 +52,7 @@ export default function App() {
   const closeLibraryImport = useUiStore((s) => s.closeLibraryImport)
   const hexes = useHexStore((s) => s.hexes)
   const setHexes = useHexStore((s) => s.setHexes)
+  const setRoutes = useHexStore((s) => s.setRoutes)
   const worldParams = useWorldStore((s) => s)
   const selectedHexId = useUiStore((s) => s.selectedHexId)
   const selectedEntityId = useUiStore((s) => s.selectedEntityId)
@@ -77,9 +78,10 @@ export default function App() {
     const indexed = {}
     for (const h of generated) indexed[h.id] = h
     setHexes(indexed)
+    setRoutes([])  // routes reference the old map's placements
     clearSelection()
     setSidebarView('Map')
-  }, [worldParams, setHexes, clearSelection, setSidebarView])
+  }, [worldParams, setHexes, setRoutes, clearSelection, setSidebarView])
 
   // ── Open World ─────────────────────────────────────────────────────────────
   const handleOpenWorld = useCallback(async () => {
@@ -107,7 +109,7 @@ export default function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [fsSupported, setDirHandle, setIsLoading, setError, clearError, clearSelection])
+  }, [fsSupported, setDirHandle, setIsLoading, setError, clearSelection])
 
   // ── Save World ─────────────────────────────────────────────────────────────
   const handleSaveWorld = useCallback(async () => {

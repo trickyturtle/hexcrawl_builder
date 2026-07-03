@@ -29,7 +29,6 @@ export default function ModuleForm({ moduleId }) {
   const addModule = useModuleStore((s) => s.addModule)
   const updateModule = useModuleStore((s) => s.updateModule)
   const removeModule = useModuleStore((s) => s.removeModule)
-  const addEntityToModule = useModuleStore((s) => s.addEntityToModule)
   const removeEntityFromModule = useModuleStore((s) => s.removeEntityFromModule)
   const entities = useEntityStore((s) => s.entities)
   const stopEditingModule = useUiStore((s) => s.stopEditingModule)

@@ -27,6 +27,8 @@ export default function ModuleBrowser() {
   const mergeHexes = useHexStore((s) => s.mergeHexes)
   const updateHex  = useHexStore((s) => s.updateHex)
   const addRoutes  = useHexStore((s) => s.addRoutes)
+  const routes     = useHexStore((s) => s.routes)
+  const setRoutes  = useHexStore((s) => s.setRoutes)
   const worldParams = useWorldStore((s) => s)
 
   const startEditingModule = useUiStore((s) => s.startEditingModule)
@@ -122,6 +124,15 @@ export default function ModuleBrowser() {
       }
     }
 
+    // Fail loudly (per design): if the solver couldn't satisfy all hard constraints,
+    // don't place anything and don't commit — keep the batch staged so the user can
+    // resolve the conflicts and try again.
+    if (!result.success) {
+      setSolverResult(result)
+      setSolverRunning(false)
+      return
+    }
+
     // Apply placements to hexStore — group by hex first to avoid last-write-wins overwrite
     if (result.placements && Object.keys(result.placements).length > 0) {
       // Build hex → [entityId…] map so we write each hex exactly once
@@ -177,6 +188,10 @@ export default function ModuleBrowser() {
           updateHex(hid, { entityIds: filtered })
         }
       }
+      // Remove routes generated for this batch's entities
+      setRoutes(routes.filter(
+        (r) => !(r.entityPairIds ?? []).some((id) => moduleEntityIds.has(id))
+      ))
     }
     revertLastBatch()
     setConfirmRevert(false)
@@ -216,9 +231,7 @@ export default function ModuleBrowser() {
                     const conflicts = solverResult.conflicts?.length ?? 0
                     if (solverResult.success)
                       return `Placed ${placed} entit${placed === 1 ? 'y' : 'ies'}`
-                    if (solverResult.partial)
-                      return `Placed ${placed} — ${conflicts} conflict${conflicts === 1 ? '' : 's'}`
-                    return `Placement failed — ${conflicts} conflict${conflicts === 1 ? '' : 's'}`
+                    return `Placement failed — ${conflicts} conflict${conflicts === 1 ? '' : 's'} (batch still staged)`
                   })()}
                 </p>
                 <button

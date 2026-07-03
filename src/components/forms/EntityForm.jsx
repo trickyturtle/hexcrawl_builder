@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { useEntityStore } from '../../store/entityStore.js'
+import { useHexStore } from '../../store/hexStore.js'
 import { useUiStore } from '../../store/uiStore.js'
 import { createEntity, ENTITY_SUBCLASSES } from '../../engine/entities/entitySchema.js'
 import { createRelationship } from '../../engine/entities/relationshipSchema.js'
@@ -34,7 +35,6 @@ export default function EntityForm({ entityId }) {
   const entities = useEntityStore((s) => s.entities)
   const stopEditing = useUiStore((s) => s.stopEditing)
   const selectEntity = useUiStore((s) => s.selectEntity)
-  const startEditingEntity = useUiStore((s) => s.startEditingEntity)
   const entityFormInitial = useUiStore((s) => s.entityFormInitial)
 
   const [form, setForm] = useState(() => initialFormState(existing, entityFormInitial))
@@ -103,6 +103,7 @@ export default function EntityForm({ entityId }) {
   const handleDelete = () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
     removeEntity(form.id)
+    cascadeEntityRemoval(form.id)
     stopEditing()
   }
 
@@ -396,6 +397,38 @@ export default function EntityForm({ entityId }) {
       </div>
     </div>
   )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Deleting an entity must not leave dangling UUIDs behind: strip it from every
+// hex's entityIds, from other entities' relationships, and from route pairs.
+function cascadeEntityRemoval(entityId) {
+  const hexStore = useHexStore.getState()
+  for (const [hid, hex] of Object.entries(hexStore.hexes)) {
+    if ((hex.entityIds ?? []).includes(entityId)) {
+      hexStore.updateHex(hid, { entityIds: hex.entityIds.filter((id) => id !== entityId) })
+    }
+  }
+  hexStore.setRoutes(
+    hexStore.routes.filter((r) => !(r.entityPairIds ?? []).includes(entityId))
+  )
+
+  const entityStore = useEntityStore.getState()
+  for (const e of Object.values(entityStore.entities)) {
+    const patch = {}
+    const rels = e.relationships ?? []
+    const keptRels = rels.filter((r) => r.fromEntityId !== entityId && r.toEntityId !== entityId)
+    if (keptRels.length !== rels.length) patch.relationships = keptRels
+
+    const proxReqs = e.locationRequirements?.proximityRequirements ?? []
+    const keptProx = proxReqs.filter((p) => (p.entityId ?? p.targetEntityId) !== entityId)
+    if (keptProx.length !== proxReqs.length) {
+      patch.locationRequirements = { ...e.locationRequirements, proximityRequirements: keptProx }
+    }
+
+    if (Object.keys(patch).length > 0) entityStore.updateEntity(e.id, patch)
+  }
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

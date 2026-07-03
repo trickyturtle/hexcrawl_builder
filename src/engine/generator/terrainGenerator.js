@@ -16,11 +16,15 @@ function hash2b(q, r) {
   return hash2(q + 999, r - 888)
 }
 
-// Returns terrain type string based on position and world params
+// Returns terrain type string based on position and world params.
+// q,r are axial coordinates; the rectangle's column index is q + floor(r/2)
+// (honeycomb's rectangle traverser shifts q negative on lower rows), so shape
+// math must convert to offset columns or the ocean ring comes out sheared.
 function terrainForHex(q, r, width, height, params) {
+  const col = q + Math.floor(r / 2)
   const cx = (width - 1) / 2
   const cy = (height - 1) / 2
-  const dist = Math.sqrt(((q - cx) / cx) ** 2 + ((r - cy) / cy) ** 2)
+  const dist = Math.sqrt(((col - cx) / cx) ** 2 + ((r - cy) / cy) ** 2)
 
   // Outer ocean / coast ring
   if (dist > 0.92) return 'ocean'
@@ -30,7 +34,7 @@ function terrainForHex(q, r, width, height, params) {
   const n2 = hash2b(q, r)
 
   // Mountains cluster in a rough arc
-  const arcAngle = Math.atan2(r - cy, q - cx)
+  const arcAngle = Math.atan2(r - cy, col - cx)
   const mountainArc = Math.abs(Math.sin(arcAngle * 2.3)) * (1 - dist)
   if (mountainArc > 0.38 && n1 < 0.55 && dist > 0.15) return 'mountains'
   if (mountainArc > 0.28 && n1 < 0.45 && dist > 0.1) return 'hills'
@@ -182,12 +186,18 @@ export function propagateTerrain(hexes) {
 }
 
 export function generateHexes(worldParams) {
-  const { hexCount = 200, hexSizeMiles = 6, ageOfWorld = 'mature' } = worldParams
+  const { hexCount = 200, dimensions = null, ageOfWorld = 'mature' } = worldParams
 
-  // Compute grid dimensions from hexCount, ~golden-ratio aspect
-  const ratio = 1.6
-  const height = Math.round(Math.sqrt(hexCount / ratio))
-  const width = Math.round(hexCount / height)
+  // Explicit dimensions override hexCount; otherwise compute ~golden-ratio grid
+  let width, height
+  if (dimensions?.width > 0 && dimensions?.height > 0) {
+    width = Math.round(dimensions.width)
+    height = Math.round(dimensions.height)
+  } else {
+    const ratio = 1.6
+    height = Math.max(1, Math.round(Math.sqrt(hexCount / ratio)))
+    width = Math.max(1, Math.round(hexCount / height))
+  }
 
   const hexData = createHexGrid(width, height, 28)
   const bounds = getBounds(hexData)

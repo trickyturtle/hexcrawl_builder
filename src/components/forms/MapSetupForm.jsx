@@ -228,10 +228,11 @@ export default function MapSetupForm({ onRegenerate }) {
             )}
 
             <Field label="Approximate Coverage">
+              {/* Regular hexagon, flat-to-flat width d: area = (√3/2)·d² ≈ 0.866·d² */}
               <p className="text-xs text-slate-400">
-                {(effectiveCount(form) * form.hexSizeMiles * form.hexSizeMiles).toLocaleString()} mi²
+                ≈ {Math.round(effectiveCount(form) * 0.866 * form.hexSizeMiles * form.hexSizeMiles).toLocaleString()} mi²
                 &nbsp;·&nbsp;
-                {Math.round(effectiveCount(form) * form.hexSizeMiles * form.hexSizeMiles / 640).toLocaleString()} sq miles (approx)
+                {effectiveCount(form).toLocaleString()} hexes × ~{Math.round(0.866 * form.hexSizeMiles * form.hexSizeMiles)} mi² each
               </p>
             </Field>
           </>

@@ -7,11 +7,12 @@ export function inferSpatialConstraints(relationships) {
     if (!rel.fromEntityId || !rel.toEntityId) continue
 
     if (rel.distanceConstraint) {
+      // Schema field names are min/max (unit: hexes); minHexes/maxHexes accepted too
       constraints.push({
         fromEntityId: rel.fromEntityId,
         toEntityId: rel.toEntityId,
-        minHexes: rel.distanceConstraint.minHexes ?? 0,
-        maxHexes: rel.distanceConstraint.maxHexes ?? Infinity,
+        minHexes: rel.distanceConstraint.min ?? rel.distanceConstraint.minHexes ?? 0,
+        maxHexes: rel.distanceConstraint.max ?? rel.distanceConstraint.maxHexes ?? Infinity,
         isHard: rel.distanceIsHard ?? false,
       })
     } else if (rel.impliesSpatialAccess) {

@@ -10,8 +10,9 @@ const MAX_ITERATIONS = 5000
 // batchEntities    — array of full entity objects from the current batch
 // hexes            — hexStore.hexes (object keyed by id)
 // placedEntityHexes — {entityId: hexId} for already-committed entities
-// worldParams      — from worldStore (needs .weirndesseFactor)
-export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParams }) {
+// worldParams      — from worldStore; reserved for biome adjacency rules
+//                    (weirdness factor), which the solver does not apply yet
+export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParams: _worldParams }) {
   if (!batchEntities.length) {
     return { success: true, placements: {}, conflicts: [], routes: [] }
   }
@@ -149,7 +150,7 @@ function buildDomain(entity, hexArray, placedEntityHexes, constraints, allHexes)
     // Hard proximity requirements against pre-existing placements
     for (const req of proxReqs) {
       if (!req.isHard) continue
-      const otherHexId = placedEntityHexes[req.targetEntityId]
+      const otherHexId = placedEntityHexes[proximityTargetId(req)]
       if (!otherHexId) continue
       const otherHex = allHexes[otherHexId]
       if (!otherHex) continue
@@ -219,12 +220,12 @@ function diagnoseEmptyDomain(entity, hexArray, placedEntityHexes, constraints, a
   // ── Proximity / distance constraints ─────────────────────────────────────
   for (const req of proxReqs) {
     if (!req.isHard) continue
-    const otherHexId = placedEntityHexes[req.targetEntityId]
+    const otherHexId = placedEntityHexes[proximityTargetId(req)]
     if (!otherHexId) continue
     const otherHex = allHexes[otherHexId]
     if (otherHex) {
       parts.push(
-        `proximity to ${req.targetEntityId}: ` +
+        `proximity to ${proximityTargetId(req)}: ` +
         `min ${req.minHexes ?? 0}–max ${req.maxHexes ?? '∞'} hexes, no hex satisfies`
       )
     }
@@ -261,6 +262,12 @@ function diagnoseEmptyDomain(entity, hexArray, placedEntityHexes, constraints, a
     : 'no hexes pass all hard constraints (check entity requirements)'
 }
 
+// Proximity requirements are stored as { entityId, … } (per schema and EntityForm);
+// targetEntityId is accepted for data written by older versions of the solver docs.
+function proximityTargetId(req) {
+  return req.entityId ?? req.targetEntityId
+}
+
 // ── Constraint checking ───────────────────────────────────────────────────────
 
 function checkHardConstraints(entity, hex, assignments, constraints, hexes) {
@@ -285,7 +292,7 @@ function checkHardConstraints(entity, hex, assignments, constraints, hexes) {
   // Entity's own hard proximity requirements
   for (const req of (entity.locationRequirements?.proximityRequirements ?? [])) {
     if (!req.isHard) continue
-    const otherHexId = assignments[req.targetEntityId]
+    const otherHexId = assignments[proximityTargetId(req)]
     if (!otherHexId) continue
     const otherHex = hexes[otherHexId]
     if (!otherHex) continue
