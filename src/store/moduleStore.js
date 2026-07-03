@@ -36,21 +36,36 @@ export const useModuleStore = create((set, get) => ({
   unstageFromBatch: (id) =>
     set((s) => ({ pendingBatch: s.pendingBatch.filter((x) => x !== id) })),
 
-  commitBatch: (moduleIds) => {
-    const ids = moduleIds ?? get().pendingBatch
+  // record: what the commit actually did, so revert can unwind it exactly —
+  // { placements: {entityId: hexId}, routeIds: [], addedHexIds: [],
+  //   hexPatches: {hexId: priorValues}, mapCreated: bool }
+  commitBatch: (record = {}) => {
+    const ids = get().pendingBatch
     if (!ids.length) return null
-    const batch = { id: uuidv4(), moduleIds: ids, committedAt: new Date().toISOString() }
+    const batch = {
+      id: uuidv4(),
+      moduleIds: ids,
+      committedAt: new Date().toISOString(),
+      placements: {},
+      routeIds: [],
+      addedHexIds: [],
+      hexPatches: {},
+      mapCreated: false,
+      ...record,
+    }
     set((s) => ({ batches: [...s.batches, batch], pendingBatch: [] }))
     return batch
   },
 
+  // Removes the batch record only. Module profiles are kept — they return to
+  // the uncommitted state so the user can adjust constraints and re-commit
+  // without retyping anything. Map-side unwinding (placements, routes, hexes)
+  // is the caller's job via applyBatchRevert.
   revertLastBatch: () => {
-    const { batches, modules } = get()
+    const { batches } = get()
     if (!batches.length) return null
     const last = batches[batches.length - 1]
-    const next = { ...modules }
-    for (const id of last.moduleIds) delete next[id]
-    set({ modules: next, batches: batches.slice(0, -1) })
+    set({ batches: batches.slice(0, -1) })
     return last
   },
 

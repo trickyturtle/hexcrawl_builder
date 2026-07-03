@@ -12,6 +12,7 @@ import {
   generateHexes,
 } from '../../engine/generator/terrainGenerator.js'
 import { applyBiomeAdjacency } from '../../engine/solver/biomeRules.js'
+import { applyBatchRevert } from '../../engine/batchRevert.js'
 
 export default function ModuleBrowser() {
   const modules      = useModuleStore((s) => s.modules)
@@ -71,30 +72,51 @@ export default function ModuleBrowser() {
     setSolverRunning(true)
     setSolverResult(null)
 
-    // Build working hex map — create or expand as needed
+    // Build working hex map — create or expand as needed.
+    // Everything the commit does is recorded so revert can unwind it exactly:
+    // hexes added, prior values of hexes patched, entities placed, routes made.
     let workingHexes = { ...hexes }
+    const addedHexIds = []
+    const undoPatches = {}
+    const recordPriorValues = (hid, patch) => {
+      const before = workingHexes[hid]
+      if (!before) return
+      const prior = undoPatches[hid] ?? {}
+      for (const key of Object.keys(patch)) {
+        if (!(key in prior)) prior[key] = before[key]
+      }
+      undoPatches[hid] = prior
+    }
 
     if (needsCreation) {
       // No map yet — generate one sized for this batch
       const { hexes: generated } = generateHexes({ ...worldParams, hexCount: effectiveTarget })
       workingHexes = {}
-      for (const h of generated) workingHexes[h.id] = h
+      for (const h of generated) {
+        workingHexes[h.id] = h
+        addedHexIds.push(h.id)
+      }
       setHexes(workingHexes)
     } else if (needsExpansion) {
       // Existing map is too small — expand it
       const newHexes = expandHexGrid(workingHexes, effectiveTarget, worldParams)
       if (newHexes.length > 0) {
-        for (const h of newHexes) workingHexes[h.id] = h
+        for (const h of newHexes) {
+          workingHexes[h.id] = h
+          addedHexIds.push(h.id)
+        }
         mergeHexes(newHexes)
         // Propagate terrain across the expanded map before solving
         const terrainUpdates = propagateTerrain(workingHexes)
         for (const [hid, patch] of Object.entries(terrainUpdates)) {
+          recordPriorValues(hid, patch)
           workingHexes[hid] = { ...workingHexes[hid], ...patch }
           updateHex(hid, patch)
         }
         // Smooth biome seams between the old map and the expansion
         const adjacencyUpdates = applyBiomeAdjacency(workingHexes, worldParams.weirdnessFactor)
         for (const [hid, patch] of Object.entries(adjacencyUpdates)) {
+          recordPriorValues(hid, patch)
           workingHexes[hid] = { ...workingHexes[hid], ...patch }
           updateHex(hid, patch)
         }
@@ -141,6 +163,7 @@ export default function ModuleBrowser() {
     }
 
     // Apply placements to hexStore — group by hex first to avoid last-write-wins overwrite
+    const appliedPlacements = {}
     if (result.placements && Object.keys(result.placements).length > 0) {
       // Build hex → [entityId…] map so we write each hex exactly once
       const hexEntityMap = {}
@@ -155,6 +178,7 @@ export default function ModuleBrowser() {
         const toAdd = newEntityIds.filter((id) => !existing.includes(id))
         if (toAdd.length > 0) {
           const merged = [...existing, ...toAdd]
+          for (const id of toAdd) appliedPlacements[id] = hexId
           // Update the local snapshot so terrain propagation sees the right state
           workingHexes[hexId] = { ...hex, entityIds: merged }
           updateHex(hexId, { entityIds: merged })
@@ -164,41 +188,35 @@ export default function ModuleBrowser() {
       // Propagate terrain after placement
       const terrainUpdates = propagateTerrain(workingHexes)
       for (const [hexId, patch] of Object.entries(terrainUpdates)) {
+        recordPriorValues(hexId, patch)
         updateHex(hexId, patch)
       }
     }
 
     if (result.routes?.length > 0) addRoutes(result.routes)
 
-    commitBatch()
+    commitBatch({
+      placements: appliedPlacements,
+      routeIds: (result.routes ?? []).map((r) => r.id),
+      addedHexIds,
+      hexPatches: undoPatches,
+      mapCreated: needsCreation,
+    })
     setSolverResult(result)
     setSolverRunning(false)
     setHexTarget(null)  // reset to auto after commit
   }
 
   // ── Revert ─────────────────────────────────────────────────────────────────
+  // Unwinds exactly what the commit recorded: placements, routes, added hexes,
+  // and terrain patches. Module profiles are kept and return to uncommitted.
   const handleRevert = () => {
     if (!confirmRevert) { setConfirmRevert(true); return }
     if (lastBatch) {
-      const moduleEntityIds = new Set()
-      for (const modId of lastBatch.moduleIds) {
-        const mod = modules[modId]
-        if (!mod) continue
-        for (const eid of (mod.entities ?? [])) moduleEntityIds.add(eid)
-        for (const eid of Object.keys(entities)) {
-          if (entities[eid].sources?.includes(modId)) moduleEntityIds.add(eid)
-        }
-      }
-      for (const [hid, hex] of Object.entries(hexes)) {
-        const filtered = (hex.entityIds ?? []).filter((id) => !moduleEntityIds.has(id))
-        if (filtered.length !== (hex.entityIds ?? []).length) {
-          updateHex(hid, { entityIds: filtered })
-        }
-      }
-      // Remove routes generated for this batch's entities
-      setRoutes(routes.filter(
-        (r) => !(r.entityPairIds ?? []).some((id) => moduleEntityIds.has(id))
-      ))
+      const { hexes: nextHexes, routes: nextRoutes } =
+        applyBatchRevert(lastBatch, hexes, routes, { modules, entities })
+      setHexes(nextHexes)
+      setRoutes(nextRoutes)
     }
     revertLastBatch()
     setConfirmRevert(false)
