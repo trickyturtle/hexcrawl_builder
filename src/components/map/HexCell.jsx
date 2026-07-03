@@ -45,9 +45,12 @@ const BATCH_COLORS = [
 ]
 
 // fogVisible: whether the fog-of-war overlay is active
+// dangerVisible/magicVisible: tint hexes by their danger/magic rating (0–3)
 // batchIndex: -1 = no batch tint; 0+ = color from BATCH_COLORS
-const HexCell = memo(function HexCell({ hex, selected, fogVisible = false, batchIndex = -1 }) {
-  const { id, corners, terrain, fog, entityIds } = hex
+const HexCell = memo(function HexCell({
+  hex, selected, fogVisible = false, dangerVisible = false, magicVisible = false, batchIndex = -1,
+}) {
+  const { id, corners, terrain, fog, entityIds, danger = 0, magic = 0, anomaly = false } = hex
   const entityCount = entityIds?.length ?? 0
 
   const points = corners.map((c) => `${c.x},${c.y}`).join(' ')
@@ -88,6 +91,40 @@ const HexCell = memo(function HexCell({ hex, selected, fogVisible = false, batch
           points={points}
           fill={BATCH_COLORS[batchIndex % BATCH_COLORS.length]}
           stroke="none"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+
+      {/* Danger overlay — red tint scaled by rating */}
+      {dangerVisible && danger > 0 && effectiveFog !== 'unknown' && (
+        <polygon
+          points={points}
+          fill={`rgba(220,38,38,${0.14 * danger})`}
+          stroke="none"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+
+      {/* Magic overlay — violet tint scaled by rating */}
+      {magicVisible && magic > 0 && effectiveFog !== 'unknown' && (
+        <polygon
+          points={points}
+          fill={`rgba(147,51,234,${0.16 * magic})`}
+          stroke="none"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+
+      {/* Dimensional anomaly marker — biome adjacency broken by weirdness */}
+      {anomaly && effectiveFog !== 'unknown' && (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={5}
+          fill="none"
+          stroke="#e879f9"
+          strokeWidth={0.9}
+          strokeDasharray="2.2,2.2"
           style={{ pointerEvents: 'none' }}
         />
       )}

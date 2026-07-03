@@ -11,6 +11,7 @@ import {
   expandHexGrid,
   generateHexes,
 } from '../../engine/generator/terrainGenerator.js'
+import { applyBiomeAdjacency } from '../../engine/solver/biomeRules.js'
 
 export default function ModuleBrowser() {
   const modules      = useModuleStore((s) => s.modules)
@@ -91,6 +92,12 @@ export default function ModuleBrowser() {
           workingHexes[hid] = { ...workingHexes[hid], ...patch }
           updateHex(hid, patch)
         }
+        // Smooth biome seams between the old map and the expansion
+        const adjacencyUpdates = applyBiomeAdjacency(workingHexes, worldParams.weirdnessFactor)
+        for (const [hid, patch] of Object.entries(adjacencyUpdates)) {
+          workingHexes[hid] = { ...workingHexes[hid], ...patch }
+          updateHex(hid, patch)
+        }
       }
     }
 
@@ -114,7 +121,7 @@ export default function ModuleBrowser() {
 
     let result
     try {
-      result = solve({ batchEntities, hexes: workingHexes, placedEntityHexes, worldParams })
+      result = solve({ batchEntities, batchModules: pendingModules, hexes: workingHexes, placedEntityHexes, worldParams })
     } catch (err) {
       result = {
         success: false,
@@ -245,6 +252,13 @@ export default function ModuleBrowser() {
                     <li key={i} className="text-[10px] text-red-300">
                       <span className="text-red-400 font-medium">{c.entityName}:</span> {c.reason}
                     </li>
+                  ))}
+                </ul>
+              )}
+              {solverResult.warnings?.length > 0 && (
+                <ul className="space-y-0.5 mt-1">
+                  {solverResult.warnings.map((w, i) => (
+                    <li key={i} className="text-[10px] text-amber-300/80">⚠ {w}</li>
                   ))}
                 </ul>
               )}

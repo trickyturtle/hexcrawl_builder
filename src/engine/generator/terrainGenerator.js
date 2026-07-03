@@ -1,5 +1,6 @@
 import { hexId, createHexGrid, getBounds, getNeighborIds } from './hexGrid.js'
 import { DEFAULT_HEX } from '../../data/schemas/defaultSchemas.js'
+import { applyBiomeAdjacency, terrainForBiome } from '../solver/biomeRules.js'
 
 // Deterministic hash → [0,1) for a given q,r position
 function hash2(q, r) {
@@ -16,31 +17,77 @@ function hash2b(q, r) {
   return hash2(q + 999, r - 888)
 }
 
-// Returns terrain type string based on position and world params.
-// q,r are axial coordinates; the rectangle's column index is q + floor(r/2)
-// (honeycomb's rectangle traverser shifts q negative on lower rows), so shape
-// math must convert to offset columns or the ocean ring comes out sheared.
-function terrainForHex(q, r, width, height, params) {
-  const col = q + Math.floor(r / 2)
+// Biomes usable as interior land fill. Coastal comes from the shoreline,
+// underground is independent of the surface, planar is anomaly-only.
+const NATURAL_FILL_BIOMES = ['temperate', 'tropical', 'arid', 'cold', 'magical']
+
+// ── Map shape ─────────────────────────────────────────────────────────────────
+// Normalized "distance from land center" for shape masking: > 0.92 is ocean,
+// > 0.80 is coast. q,r are axial; col is the offset column (q + floor(r/2)) so
+// shape math isn't sheared.
+function shapeDistance(col, r, width, height, mapShape) {
   const cx = (width - 1) / 2
   const cy = (height - 1) / 2
-  const dist = Math.sqrt(((col - cx) / cx) ** 2 + ((r - cy) / cy) ** 2)
+  const ex = cx > 0 ? (col - cx) / cx : 0
+  const ey = cy > 0 ? (r - cy) / cy : 0
+  const dist = Math.sqrt(ex * ex + ey * ey)
+  const n = hash2(col + 777, r + 333) // coastline noise, stable per position
 
-  // Outer ocean / coast ring
-  if (dist > 0.92) return 'ocean'
-  if (dist > 0.80) return 'coast'
+  switch (mapShape) {
+    case 'rectangle':
+      return 0 // simple grid: all land, no ocean ring
+    case 'island':
+      return dist * 1.55 + (n - 0.5) * 0.18
+    case 'continent':
+      return dist + (n - 0.5) * 0.38
+    case 'irregular': {
+      // two offset lobes, take the nearer one, heavy coastline noise
+      const ex2 = cx > 0 ? (col - cx * 0.55) / cx : 0
+      const ey2 = cy > 0 ? (r - cy * 1.35) / cy : 0
+      const d2 = Math.sqrt(ex2 * ex2 + ey2 * ey2)
+      return Math.min(dist * 1.2, d2 * 1.4) + (n - 0.5) * 0.45
+    }
+    case 'circular':
+    default:
+      return dist
+  }
+}
 
+// ── Biome distribution ────────────────────────────────────────────────────────
+// biomeDistribution is { biome: percentage }. Only natural fill biomes count;
+// returns null when nothing usable is set (falls back to the noise algorithm).
+function normalizeBiomeWeights(biomeDistribution) {
+  if (!biomeDistribution) return null
+  const entries = NATURAL_FILL_BIOMES
+    .map((b) => [b, Number(biomeDistribution[b]) || 0])
+    .filter(([, v]) => v > 0)
+  const total = entries.reduce((s, [, v]) => s + v, 0)
+  if (total <= 0) return null
+  return entries.map(([b, v]) => [b, v / total])
+}
+
+function pickWeighted(weights, n) {
+  let acc = 0
+  for (const [biome, w] of weights) {
+    acc += w
+    if (n < acc) return biome
+  }
+  return weights[weights.length - 1][0]
+}
+
+// ── Interior terrain (legacy noise algorithm, used without biomeDistribution) ─
+function noiseTerrain(q, r, col, cx, cy, dist, params) {
   const n1 = hash2(q, r)
   const n2 = hash2b(q, r)
 
   // Mountains cluster in a rough arc
   const arcAngle = Math.atan2(r - cy, col - cx)
-  const mountainArc = Math.abs(Math.sin(arcAngle * 2.3)) * (1 - dist)
+  const mountainArc = Math.abs(Math.sin(arcAngle * 2.3)) * (1 - Math.min(dist, 1))
   if (mountainArc > 0.38 && n1 < 0.55 && dist > 0.15) return 'mountains'
   if (mountainArc > 0.28 && n1 < 0.45 && dist > 0.1) return 'hills'
 
-  // Moisture axis: wetter on one side
-  const moisture = n2 * 0.6 + (1 - dist) * 0.4
+  // Moisture axis: wetter toward the interior
+  const moisture = n2 * 0.6 + (1 - Math.min(dist, 1)) * 0.4
 
   if (moisture > 0.7 && n1 < 0.6) return 'forest'
   if (moisture > 0.55 && n1 < 0.35) return 'swamp'
@@ -48,6 +95,23 @@ function terrainForHex(q, r, width, height, params) {
   if (dist < 0.15 && n1 < 0.3 && params.ageOfWorld === 'ancient') return 'tundra'
 
   return 'plains'
+}
+
+function terrainAndBiome(q, r, col, width, height, params) {
+  const d = shapeDistance(col, r, width, height, params.mapShape ?? 'continent')
+  if (d > 0.92) return { terrain: 'ocean', biome: 'coastal' }
+  if (d > 0.80) return { terrain: 'coast', biome: 'coastal' }
+
+  const weights = normalizeBiomeWeights(params.biomeDistribution)
+  if (weights) {
+    const biome = pickWeighted(weights, hash2(q + 555, r - 222))
+    return { terrain: terrainForBiome(biome, hash2(q, r)), biome }
+  }
+
+  const cx = (width - 1) / 2
+  const cy = (height - 1) / 2
+  const terrain = noiseTerrain(q, r, col, cx, cy, d, params)
+  return { terrain, biome: biomeForTerrain(terrain) }
 }
 
 function biomeForTerrain(terrain) {
@@ -72,9 +136,55 @@ function elevationForTerrain(terrain) {
   return 'lowland'
 }
 
+// ── Danger / magic ratings (0–3 per hex) ──────────────────────────────────────
+export function dangerForHex(col, r, width, height, params = {}) {
+  const { dangerDistribution = 'even' } = params
+  const n = hash2(col + 4242, r + 1717)
+  const cx = (width - 1) / 2
+  const cy = (height - 1) / 2
+  const ex = cx > 0 ? (col - cx) / cx : 0
+  const ey = cy > 0 ? (r - cy) / cy : 0
+  const dist = Math.sqrt(ex * ex + ey * ey)
+
+  switch (dangerDistribution) {
+    case 'concentrated': {
+      // low-frequency cluster noise: a few pockets of high danger
+      const c = hash2(Math.floor(col / 4) + 99, Math.floor(r / 4) + 55)
+      if (c > 0.85) return n > 0.3 ? 3 : 2
+      if (c > 0.7) return n > 0.5 ? 2 : 1
+      return n > 0.8 ? 1 : 0
+    }
+    case 'peripheral':
+      return Math.max(0, Math.min(3, Math.round(dist * 3.2 - 0.4 + (n - 0.5) * 0.8)))
+    case 'random':
+      return Math.floor(n * 4)
+    case 'even':
+    default:
+      return n > 0.75 ? 2 : 1
+  }
+}
+
+export function magicForHex(col, r, params = {}) {
+  const { magicDensity = 'low' } = params
+  const n = hash2(col - 3131, r + 8888)
+  switch (magicDensity) {
+    case 'none':   return 0
+    case 'medium': return n > 0.9 ? 2 : n > 0.7 ? 1 : 0
+    case 'high':   return n > 0.9 ? 3 : n > 0.7 ? 2 : n > 0.45 ? 1 : 0
+    case 'wild':   return Math.floor(hash2b(col + 12, r - 7) * 4)
+    case 'low':
+    default:       return n > 0.92 ? 1 : 0
+  }
+}
+
 // Terrain for expansion hexes — coordinate-based noise, no grid-size normalisation.
 // Never produces ocean so the solver always has land to work with.
 function terrainForExpansionHex(q, r, params = {}) {
+  const weights = normalizeBiomeWeights(params.biomeDistribution)
+  if (weights) {
+    const biome = pickWeighted(weights, hash2(q + 555, r - 222))
+    return terrainForBiome(biome, hash2(q, r))
+  }
   const { ageOfWorld = 'mature' } = params
   const n1 = hash2(q, r)
   const n2 = hash2b(q, r)
@@ -158,6 +268,7 @@ export function expandHexGrid(existingHexes, targetCount, worldParams = {}) {
   for (const { q, r, x, y, corners } of fullGrid) {
     const id = hexId(q, r)
     if (existingHexes[id]) continue
+    const col = q + Math.floor(r / 2)
     const terrain = terrainForExpansionHex(q, r, worldParams)
     newHexes.push({
       ...DEFAULT_HEX,
@@ -165,6 +276,8 @@ export function expandHexGrid(existingHexes, targetCount, worldParams = {}) {
       terrain,
       biome:     biomeForTerrain(terrain),
       elevation: elevationForTerrain(terrain),
+      danger:    dangerForHex(col, r, newWidth, newHeight, worldParams),
+      magic:     magicForHex(col, r, worldParams),
       fog: 'known',
     })
   }
@@ -186,7 +299,7 @@ export function propagateTerrain(hexes) {
 }
 
 export function generateHexes(worldParams) {
-  const { hexCount = 200, dimensions = null, ageOfWorld = 'mature' } = worldParams
+  const { hexCount = 200, dimensions = null, weirdnessFactor = 2 } = worldParams
 
   // Explicit dimensions override hexCount; otherwise compute ~golden-ratio grid
   let width, height
@@ -202,19 +315,32 @@ export function generateHexes(worldParams) {
   const hexData = createHexGrid(width, height, 28)
   const bounds = getBounds(hexData)
 
-  return {
-    hexes: hexData.map(({ q, r, x, y, corners }) => ({
+  const byId = {}
+  for (const { q, r, x, y, corners } of hexData) {
+    const col = q + Math.floor(r / 2)
+    const { terrain, biome } = terrainAndBiome(q, r, col, width, height, worldParams)
+    const id = hexId(q, r)
+    byId[id] = {
       ...DEFAULT_HEX,
-      id: hexId(q, r),
-      q,
-      r,
-      x,
-      y,
-      corners,
-      terrain: terrainForHex(q, r, width, height, { ageOfWorld }),
-      biome: null, // set below
+      id, q, r, x, y, corners,
+      terrain,
+      biome,
+      elevation: elevationForTerrain(terrain),
+      danger: dangerForHex(col, r, width, height, worldParams),
+      magic: magicForHex(col, r, worldParams),
       fog: 'known', // reveal all during development
-    })).map((h) => ({ ...h, biome: biomeForTerrain(h.terrain), elevation: elevationForTerrain(h.terrain) })),
+    }
+  }
+
+  // Enforce biome adjacency rules (smooths violations; flags weirdness-enabled
+  // rule breaks as dimensional anomalies)
+  const patches = applyBiomeAdjacency(byId, weirdnessFactor)
+  for (const [id, patch] of Object.entries(patches)) {
+    byId[id] = { ...byId[id], ...patch }
+  }
+
+  return {
+    hexes: Object.values(byId),
     bounds,
     gridDimensions: { width, height },
   }

@@ -6,7 +6,7 @@ export const useWorldStore = create((set) => ({
   hexCount: 200,
   dimensions: null,         // { width, height } — if set, overrides hexCount
   hexSizeMiles: 6,
-  mapShape: 'rectangle',
+  mapShape: 'continent',
   settlementDensity: 'medium',
   politicalFragmentation: 'fragmented',
   dangerDistribution: 'even',

@@ -171,6 +171,8 @@ export default function HexGrid() {
             hex={hex}
             selected={hex.id === selectedHexId}
             fogVisible={overlays.fog}
+            dangerVisible={overlays.danger}
+            magicVisible={overlays.magic}
             batchIndex={overlays.moduleFootprints ? (hexBatchMap[hex.id] ?? -1) : -1}
           />
         ))}

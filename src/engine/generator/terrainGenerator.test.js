@@ -24,7 +24,7 @@ describe('generateHexes', () => {
   })
 
   it('keeps the ocean ring on the map edge, not the interior (offset-column shape math)', () => {
-    const { hexes, gridDimensions } = generateHexes({ hexCount: 300 })
+    const { hexes, gridDimensions } = generateHexes({ hexCount: 300, mapShape: 'circular' })
     const { width, height } = gridDimensions
     for (const h of hexes.filter((x) => x.terrain === 'ocean')) {
       const col = h.q + Math.floor(h.r / 2)
@@ -33,6 +33,113 @@ describe('generateHexes', () => {
       // Every ocean hex should be near at least one map edge
       expect(Math.min(edgeDistCols, edgeDistRows)).toBeLessThan(0.25)
     }
+  })
+})
+
+describe('generateHexes — map shapes', () => {
+  const oceanFraction = (params) => {
+    const { hexes } = generateHexes(params)
+    return hexes.filter((h) => h.terrain === 'ocean').length / hexes.length
+  }
+
+  it('rectangle is all land', () => {
+    expect(oceanFraction({ hexCount: 200, mapShape: 'rectangle' })).toBe(0)
+  })
+
+  it('island is mostly ocean', () => {
+    expect(oceanFraction({ hexCount: 200, mapShape: 'island' })).toBeGreaterThan(0.35)
+  })
+
+  it('continent has a coastline but a large interior', () => {
+    const f = oceanFraction({ hexCount: 300, mapShape: 'continent' })
+    expect(f).toBeGreaterThan(0.05)
+    expect(f).toBeLessThan(0.5)
+  })
+})
+
+describe('generateHexes — biome distribution', () => {
+  it('fills interior land with the requested biome', () => {
+    const { hexes } = generateHexes({
+      hexCount: 200, mapShape: 'continent', biomeDistribution: { arid: 100 },
+    })
+    const land = hexes.filter((h) => h.terrain !== 'ocean' && h.terrain !== 'coast')
+    expect(land.length).toBeGreaterThan(50)
+    for (const h of land) expect(h.biome).toBe('arid')
+  })
+
+  it('splits coverage between requested biomes', () => {
+    const { hexes } = generateHexes({
+      hexCount: 300, mapShape: 'rectangle', weirdnessFactor: 10,
+      biomeDistribution: { temperate: 50, arid: 50 },
+    })
+    const counts = {}
+    for (const h of hexes) counts[h.biome] = (counts[h.biome] ?? 0) + 1
+    expect(counts.temperate).toBeGreaterThan(hexes.length * 0.3)
+    expect(counts.arid).toBeGreaterThan(hexes.length * 0.3)
+  })
+
+  it('ignores non-surface biomes in the distribution', () => {
+    const { hexes } = generateHexes({
+      hexCount: 100, mapShape: 'rectangle', biomeDistribution: { underground: 100 },
+    })
+    // falls back to the noise algorithm — no underground surface hexes
+    expect(hexes.every((h) => h.biome !== 'underground')).toBe(true)
+  })
+})
+
+describe('generateHexes — biome adjacency & anomalies', () => {
+  it('never flags anomalies at weirdness 0', () => {
+    const { hexes } = generateHexes({
+      hexCount: 300, mapShape: 'rectangle', weirdnessFactor: 0,
+      biomeDistribution: { arid: 50, cold: 50 },
+    })
+    expect(hexes.every((h) => !h.anomaly)).toBe(true)
+  })
+
+  it('flags weirdness-enabled rule breaks as dimensional anomalies', () => {
+    const { hexes } = generateHexes({
+      hexCount: 300, mapShape: 'rectangle', weirdnessFactor: 10,
+      biomeDistribution: { arid: 50, cold: 50 },
+    })
+    // arid–cold scores 0.3 (< 0.5): kept at weirdness 10, flagged
+    expect(hexes.some((h) => h.anomaly)).toBe(true)
+  })
+})
+
+describe('generateHexes — danger & magic ratings', () => {
+  it('magicDensity none produces no magic anywhere', () => {
+    const { hexes } = generateHexes({ hexCount: 200, magicDensity: 'none' })
+    expect(hexes.every((h) => h.magic === 0)).toBe(true)
+  })
+
+  it('magicDensity wild produces high-magic hexes', () => {
+    const { hexes } = generateHexes({ hexCount: 200, magicDensity: 'wild' })
+    expect(hexes.some((h) => h.magic >= 3)).toBe(true)
+  })
+
+  it('peripheral danger is higher at the edges than the center', () => {
+    const { hexes, gridDimensions } = generateHexes({
+      hexCount: 300, mapShape: 'rectangle', dangerDistribution: 'peripheral',
+    })
+    const { width, height } = gridDimensions
+    const cx = (width - 1) / 2
+    const cy = (height - 1) / 2
+    const distOf = (h) => {
+      const col = h.q + Math.floor(h.r / 2)
+      return Math.sqrt(((col - cx) / cx) ** 2 + ((h.r - cy) / cy) ** 2)
+    }
+    const avg = (arr) => arr.reduce((s, h) => s + h.danger, 0) / arr.length
+    const inner = hexes.filter((h) => distOf(h) < 0.3)
+    const outer = hexes.filter((h) => distOf(h) > 0.7)
+    expect(avg(outer)).toBeGreaterThan(avg(inner) + 0.5)
+  })
+
+  it('concentrated danger produces level-3 pockets and safe stretches', () => {
+    const { hexes } = generateHexes({
+      hexCount: 300, mapShape: 'rectangle', dangerDistribution: 'concentrated',
+    })
+    expect(hexes.some((h) => h.danger === 3)).toBe(true)
+    expect(hexes.filter((h) => h.danger === 0).length).toBeGreaterThan(hexes.length * 0.3)
   })
 })
 

@@ -62,6 +62,21 @@ export default function HexDetailPanel({ hexId }) {
           <div className="flex flex-wrap gap-1 mt-1">
             {hex.biome && <Tag>{hex.biome}</Tag>}
             {hex.elevation && hex.elevation !== 'lowland' && <Tag>{hex.elevation}</Tag>}
+            {hex.danger > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-300">
+                danger {hex.danger}/3
+              </span>
+            )}
+            {hex.magic > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300">
+                magic {hex.magic}/3
+              </span>
+            )}
+            {hex.anomaly && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-900/40 text-fuchsia-300">
+                dimensional anomaly
+              </span>
+            )}
           </div>
         </Section>
 
