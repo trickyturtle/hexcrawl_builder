@@ -5,15 +5,16 @@ import { useUiStore } from '../../store/uiStore.js'
 // Parses text for [[Entity Name]] or [[Entity Name|display text]] patterns
 // and renders them as clickable links that navigate to the named entity.
 // Unrecognised links still render as styled text so the author knows they exist.
-const LINK_RE = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
+// Kept as source (not a /g regex instance): a shared global regex carries
+// lastIndex state across renders, which is a concurrency hazard.
+const LINK_SOURCE = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/.source
 
 export default function HyperlinkText({ text, className = '' }) {
   const entities = useEntityStore((s) => s.entities)
   const selectEntity = useUiStore((s) => s.selectEntity)
 
-  if (!text) return null
-
-  // Build name → entity lookup (case-insensitive)
+  // Build name → entity lookup (case-insensitive).
+  // Hooks must run unconditionally — the empty-text early return comes after.
   const byName = React.useMemo(() => {
     const map = {}
     for (const e of Object.values(entities)) {
@@ -22,12 +23,14 @@ export default function HyperlinkText({ text, className = '' }) {
     return map
   }, [entities])
 
+  if (!text) return null
+
+  const linkRe = new RegExp(LINK_SOURCE, 'g')
   const parts = []
   let last = 0
   let match
 
-  LINK_RE.lastIndex = 0
-  while ((match = LINK_RE.exec(text)) !== null) {
+  while ((match = linkRe.exec(text)) !== null) {
     if (match.index > last) {
       parts.push({ type: 'text', value: text.slice(last, match.index) })
     }

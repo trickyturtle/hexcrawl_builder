@@ -198,7 +198,8 @@ function RelationshipRow({ rel, currentEntityId, entities, onSelectEntity }) {
         )}
         {rel.distanceConstraint && (
           <RelTag>
-            {rel.distanceConstraint.min ?? 0}–{rel.distanceConstraint.max} hexes
+            {rel.distanceConstraint.min ?? rel.distanceConstraint.minHexes ?? 0}
+            –{rel.distanceConstraint.max ?? rel.distanceConstraint.maxHexes ?? '∞'} hexes
             {!rel.distanceIsHard && ' (soft)'}
           </RelTag>
         )}
@@ -248,13 +249,14 @@ function LocationRequirements({ req, entities }) {
         <ReqRow label="Elevation" values={req.elevationRequirements} />
       )}
       {req.proximityRequirements?.map((p, i) => {
-        const target = entities[p.entityId]
+        const targetId = p.entityId ?? p.targetEntityId
+        const target = entities[targetId]
         return (
           <div key={i} className="flex gap-2 text-slate-400">
             <span className="text-slate-600">{p.isHard ? 'must' : 'prefer'}</span>
             <span>
               {p.minHexes}–{p.maxHexes} hexes from{' '}
-              <span className="text-slate-300">{target?.name ?? p.entityId}</span>
+              <span className="text-slate-300">{target?.name ?? targetId}</span>
             </span>
           </div>
         )

@@ -10,6 +10,20 @@ const DIFFICULTY_OPTS = ['low', 'medium', 'high', 'varies']
 const FOOTPRINT_OPTS  = ['single', 'sprawling']
 const DIST_UNITS      = ['miles', 'days', 'hexes']
 const SECTIONS        = ['Info', 'Entities', 'Distances', 'Notes']
+const ENVIRONMENT_SUGGESTIONS = [
+  'dungeon', 'wilderness', 'urban', 'coastal', 'forest',
+  'mountains', 'swamp', 'desert', 'underground', 'arctic',
+]
+
+// Library-imported modules may carry environment as a delimited string;
+// normalize to the array form the schema uses.
+function normalizeEnvironment(env) {
+  if (Array.isArray(env)) return [...env]
+  if (typeof env === 'string' && env) {
+    return env.split(/[/,·]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
+  }
+  return []
+}
 
 function initialForm(existing) {
   if (!existing) return { ...DEFAULT_MODULE }
@@ -19,6 +33,7 @@ function initialForm(existing) {
     explicitDistances: existing.explicitDistances ? [...existing.explicitDistances] : [],
     entryPoints: existing.entryPoints ? [...existing.entryPoints] : [],
     toneKeywords: existing.toneKeywords ? [...existing.toneKeywords] : [],
+    environment: normalizeEnvironment(existing.environment),
     entities: existing.entities ? [...existing.entities] : [],
   }
 }
@@ -29,7 +44,6 @@ export default function ModuleForm({ moduleId }) {
   const addModule = useModuleStore((s) => s.addModule)
   const updateModule = useModuleStore((s) => s.updateModule)
   const removeModule = useModuleStore((s) => s.removeModule)
-  const addEntityToModule = useModuleStore((s) => s.addEntityToModule)
   const removeEntityFromModule = useModuleStore((s) => s.removeEntityFromModule)
   const entities = useEntityStore((s) => s.entities)
   const stopEditingModule = useUiStore((s) => s.stopEditingModule)
@@ -38,6 +52,7 @@ export default function ModuleForm({ moduleId }) {
   const [form, setForm] = useState(() => initialForm(existing))
   const [section, setSection] = useState('Info')
   const [toneInput, setToneInput] = useState('')
+  const [envInput, setEnvInput] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const set = useCallback((k, v) => setForm((f) => ({ ...f, [k]: v })), [])
@@ -49,6 +64,16 @@ export default function ModuleForm({ moduleId }) {
     set('toneKeywords', [...form.toneKeywords, t])
     setToneInput('')
   }
+
+  // ── Environment tags ──────────────────────────────────────────────────────
+  const addEnv = (raw) => {
+    const v = (raw ?? envInput).trim().toLowerCase()
+    if (!v || form.environment.includes(v)) return
+    set('environment', [...form.environment, v])
+    setEnvInput('')
+  }
+  const removeEnv = (v) =>
+    set('environment', form.environment.filter((x) => x !== v))
 
   // ── Explicit distances ────────────────────────────────────────────────────
   const addDistance = () =>
@@ -241,6 +266,47 @@ export default function ModuleForm({ moduleId }) {
                   </button>
                 ))}
               </div>
+            </Field>
+
+            <Field label="Environment">
+              {form.environment.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {form.environment.map((env) => (
+                    <span key={env} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-blue-500 text-blue-300 bg-blue-900/30">
+                      {env}
+                      <button
+                        onClick={() => removeEnv(env)}
+                        className="text-blue-400 hover:text-red-400 leading-none"
+                      >✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1 mb-1.5">
+                {ENVIRONMENT_SUGGESTIONS.filter((s) => !form.environment.includes(s)).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => addEnv(s)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-slate-600 text-slate-500 hover:border-slate-400 hover:text-slate-300 transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={envInput}
+                  onChange={(e) => setEnvInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEnv() } }}
+                  placeholder="Custom environment…"
+                  className={`${INPUT} flex-1`}
+                />
+                <button onClick={() => addEnv()} className={BTN_SECONDARY}>Add</button>
+              </div>
+              <p className="text-[10px] text-slate-600 mt-1">
+                Used for map sizing — modules with no shared environment get extra transition space between them.
+              </p>
             </Field>
 
             <Field label="Tone Keywords">

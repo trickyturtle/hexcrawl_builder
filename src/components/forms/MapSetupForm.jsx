@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { useWorldStore } from '../../store/worldStore.js'
+import { useHexStore } from '../../store/hexStore.js'
 import { SYSTEM_PRESETS, milesPerDayToHexes } from '../../data/presets/systemPresets.js'
 import { BIOME_TYPES } from '../../data/schemas/defaultSchemas.js'
 
@@ -26,7 +27,7 @@ function extractForm(ws) {
     dangerDistribution: ws.dangerDistribution,
     magicDensity: ws.magicDensity,
     ageOfWorld: ws.ageOfWorld,
-    weirndesseFactor: ws.weirndesseFactor,
+    weirdnessFactor: ws.weirdnessFactor,
     biomeDistribution: { ...ws.biomeDistribution },
     systemPreset: ws.systemPreset,
     travelSpeedAssumptions: { ...ws.travelSpeedAssumptions },
@@ -37,9 +38,12 @@ export default function MapSetupForm({ onRegenerate }) {
   const worldStore = useWorldStore((s) => s)
   const setParams = useWorldStore((s) => s.setParams)
 
+  const hasWorld = useHexStore((s) => Object.keys(s.hexes).length > 0)
+
   const [form, setForm] = useState(() => extractForm(worldStore))
   const [section, setSection] = useState('Preset')
   const [dirty, setDirty] = useState(false)
+  const [confirmRegen, setConfirmRegen] = useState(false)
 
   const set = useCallback((key, value) => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -82,6 +86,9 @@ export default function MapSetupForm({ onRegenerate }) {
   }
 
   const handleApplyAndRegenerate = () => {
+    // Regenerating an existing map wipes placements — two-click confirm
+    if (hasWorld && !confirmRegen) { setConfirmRegen(true); return }
+    setConfirmRegen(false)
     const params = buildParams()
     setParams(params)
     setDirty(false)
@@ -228,10 +235,11 @@ export default function MapSetupForm({ onRegenerate }) {
             )}
 
             <Field label="Approximate Coverage">
+              {/* Regular hexagon, flat-to-flat width d: area = (√3/2)·d² ≈ 0.866·d² */}
               <p className="text-xs text-slate-400">
-                {(effectiveCount(form) * form.hexSizeMiles * form.hexSizeMiles).toLocaleString()} mi²
+                ≈ {Math.round(effectiveCount(form) * 0.866 * form.hexSizeMiles * form.hexSizeMiles).toLocaleString()} mi²
                 &nbsp;·&nbsp;
-                {Math.round(effectiveCount(form) * form.hexSizeMiles * form.hexSizeMiles / 640).toLocaleString()} sq miles (approx)
+                {effectiveCount(form).toLocaleString()} hexes × ~{Math.round(0.866 * form.hexSizeMiles * form.hexSizeMiles)} mi² each
               </p>
             </Field>
           </>
@@ -281,11 +289,11 @@ export default function MapSetupForm({ onRegenerate }) {
             <Field label="Age of World">
               <SegmentedControl options={AGE_OPTS} value={form.ageOfWorld} onChange={(v) => set('ageOfWorld', v)} wrap />
             </Field>
-            <Field label={`Weirdness Factor — ${form.weirndesseFactor}/10`}>
+            <Field label={`Weirdness Factor — ${form.weirdnessFactor}/10`}>
               <input
                 type="range" min={0} max={10} step={1}
-                value={form.weirndesseFactor}
-                onChange={(e) => set('weirndesseFactor', Number(e.target.value))}
+                value={form.weirdnessFactor}
+                onChange={(e) => set('weirdnessFactor', Number(e.target.value))}
                 className="w-full accent-blue-500"
               />
               <div className="flex justify-between text-[10px] text-slate-600 mt-0.5">
@@ -293,7 +301,7 @@ export default function MapSetupForm({ onRegenerate }) {
                 <span>Weird</span>
               </div>
               <p className="text-[10px] text-slate-600 mt-1">
-                {WEIRDNESS_DESC[form.weirndesseFactor] ?? ''}
+                {WEIRDNESS_DESC[form.weirdnessFactor] ?? ''}
               </p>
             </Field>
           </>
@@ -350,9 +358,12 @@ export default function MapSetupForm({ onRegenerate }) {
       <div className="px-4 py-3 border-t border-slate-700/60 flex gap-2 flex-shrink-0">
         <button
           onClick={handleApplyAndRegenerate}
-          className="flex-1 px-3 py-1.5 rounded bg-blue-700 hover:bg-blue-600 text-white text-xs transition-colors"
+          onMouseLeave={() => setConfirmRegen(false)}
+          className={`flex-1 px-3 py-1.5 rounded text-white text-xs transition-colors ${
+            confirmRegen ? 'bg-red-800 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-600'
+          }`}
         >
-          Apply &amp; Regenerate
+          {confirmRegen ? 'Confirm — wipes placements' : hasWorld ? 'Apply & Regenerate' : 'Apply & Generate'}
         </button>
         <button
           onClick={handleApply}

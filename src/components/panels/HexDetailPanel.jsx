@@ -20,18 +20,19 @@ export default function HexDetailPanel({ hexId }) {
   const [assignQuery, setAssignQuery] = useState('')
   const [showAssign, setShowAssign] = useState(false)
 
-  if (!hex) return null
-
-  const hexEntities = (hex.entityIds ?? []).map((id) => entities[id]).filter(Boolean)
-
-  // Entities not yet in this hex, filtered by query
+  // Entities not yet in this hex, filtered by query.
+  // Hooks must run unconditionally — the null-hex early return comes after them.
   const assignCandidates = useMemo(() => {
     const q = assignQuery.toLowerCase()
     return Object.values(entities)
-      .filter((e) => !(hex.entityIds ?? []).includes(e.id))
+      .filter((e) => !(hex?.entityIds ?? []).includes(e.id))
       .filter((e) => !q || e.name?.toLowerCase().includes(q) || e.subclass?.toLowerCase().includes(q))
       .slice(0, 10)
-  }, [entities, hex.entityIds, assignQuery])
+  }, [entities, hex?.entityIds, assignQuery])
+
+  if (!hex) return null
+
+  const hexEntities = (hex.entityIds ?? []).map((id) => entities[id]).filter(Boolean)
 
   const assignEntity = (entityId) => {
     updateHex(hex.id, { entityIds: [...(hex.entityIds ?? []), entityId] })
@@ -61,6 +62,21 @@ export default function HexDetailPanel({ hexId }) {
           <div className="flex flex-wrap gap-1 mt-1">
             {hex.biome && <Tag>{hex.biome}</Tag>}
             {hex.elevation && hex.elevation !== 'lowland' && <Tag>{hex.elevation}</Tag>}
+            {hex.danger > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-300">
+                danger {hex.danger}/3
+              </span>
+            )}
+            {hex.magic > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300">
+                magic {hex.magic}/3
+              </span>
+            )}
+            {hex.anomaly && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-900/40 text-fuchsia-300">
+                dimensional anomaly
+              </span>
+            )}
           </div>
         </Section>
 

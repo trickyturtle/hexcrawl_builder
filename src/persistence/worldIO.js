@@ -7,9 +7,22 @@ import { useModuleStore } from '../store/moduleStore.js'
 const WORLD_PARAMS_KEYS = [
   'hexCount', 'dimensions', 'hexSizeMiles', 'mapShape',
   'settlementDensity', 'politicalFragmentation', 'dangerDistribution',
-  'magicDensity', 'ageOfWorld', 'weirndesseFactor', 'biomeDistribution',
+  'magicDensity', 'ageOfWorld', 'weirdnessFactor', 'biomeDistribution',
   'systemPreset', 'travelSpeedAssumptions',
 ]
+
+// world.json files written before the weirdnessFactor rename used misspelled
+// keys (both spellings existed). Migrate them on load; saves write only the
+// correct key. Exported for tests.
+export function normalizeWorldData(worldData) {
+  if (!worldData || typeof worldData !== 'object') return worldData
+  const { weirndesseFactor, weirndessFactor, ...rest } = worldData
+  if (rest.weirdnessFactor === undefined) {
+    const legacy = weirndesseFactor ?? weirndessFactor
+    if (legacy !== undefined) rest.weirdnessFactor = legacy
+  }
+  return rest
+}
 
 export async function saveWorld(dirHandle) {
   const ws = useWorldStore.getState()
@@ -41,7 +54,7 @@ export async function loadWorld(dirHandle) {
   ])
 
   if (worldData) {
-    useWorldStore.getState().hydrate(worldData)
+    useWorldStore.getState().hydrate(normalizeWorldData(worldData))
   }
 
   if (hexArray) {

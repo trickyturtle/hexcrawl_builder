@@ -18,12 +18,16 @@ export default function HexGrid() {
 
   const [pan, setPan] = useState({ x: PADDING, y: PADDING })
   const [zoom, setZoom] = useState(1)
+  const [dragging, setDragging] = useState(false)
 
-  // Keep refs in sync so event handlers always see current values without stale closures
+  // Keep refs in sync so event handlers always see current values without stale
+  // closures. Synced in an effect — refs must not be written during render.
   const panRef = useRef(pan)
   const zoomRef = useRef(zoom)
-  panRef.current = pan
-  zoomRef.current = zoom
+  useEffect(() => {
+    panRef.current = pan
+    zoomRef.current = zoom
+  }, [pan, zoom])
 
   const svgRef = useRef(null)
   const dragRef = useRef(null)    // { startX, startY } anchor when drag starts
@@ -38,6 +42,7 @@ export default function HexGrid() {
       targetHexId: e.target?.dataset?.id ?? null,
     }
     movedRef.current = false
+    setDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }, [])
 
@@ -61,6 +66,7 @@ export default function HexGrid() {
       }
     }
     dragRef.current = null
+    setDragging(false)
   }, [selectHex, clearSelection])
 
   // ── Zoom (non-passive wheel on SVG) ───────────────────────────────────────
@@ -156,7 +162,7 @@ export default function HexGrid() {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      style={{ cursor: dragRef.current ? 'grabbing' : 'grab', background: '#0a0a14' }}
+      style={{ cursor: dragging ? 'grabbing' : 'grab', background: '#0a0a14' }}
     >
       <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
         {hexArray.map((hex) => (
@@ -165,6 +171,8 @@ export default function HexGrid() {
             hex={hex}
             selected={hex.id === selectedHexId}
             fogVisible={overlays.fog}
+            dangerVisible={overlays.danger}
+            magicVisible={overlays.magic}
             batchIndex={overlays.moduleFootprints ? (hexBatchMap[hex.id] ?? -1) : -1}
           />
         ))}

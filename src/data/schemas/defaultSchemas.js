@@ -5,6 +5,9 @@ export const DEFAULT_MODULE = {
   pdfStartPage: 1,
   footprint: 'single',
   localeCount: 1,
+  // Environment tags (e.g. 'forest', 'coastal', 'underground') — used by map
+  // sizing to add transition space between modules with no shared environment
+  environment: [],
   explicitDistances: [],
   entryPoints: [],
   toneKeywords: [],
@@ -23,6 +26,9 @@ export const DEFAULT_HEX = {
   fog: 'unknown',
   eventLog: [],
   season: null,
+  danger: 0,      // 0–3, from dangerDistribution
+  magic: 0,       // 0–3, from magicDensity
+  anomaly: false, // biome adjacency broken by weirdness (dimensional anomaly)
 }
 
 export const TERRAIN_TYPES = [

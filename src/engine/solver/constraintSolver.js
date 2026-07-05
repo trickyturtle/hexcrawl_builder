@@ -1,5 +1,5 @@
 import { hexDistance } from '../generator/hexGrid.js'
-import { inferSpatialConstraints } from './spatialInference.js'
+import { inferSpatialConstraints, inferModuleDistanceConstraints } from './spatialInference.js'
 import { scorePlacement } from './scoring.js'
 import { generateRoutes } from '../generator/routeGenerator.js'
 
@@ -8,17 +8,22 @@ const MAX_ITERATIONS = 5000
 // ── Public API ────────────────────────────────────────────────────────────────
 
 // batchEntities    — array of full entity objects from the current batch
+// batchModules     — module profiles in the batch (for explicitDistances)
 // hexes            — hexStore.hexes (object keyed by id)
 // placedEntityHexes — {entityId: hexId} for already-committed entities
-// worldParams      — from worldStore (needs .weirndesseFactor)
-export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParams }) {
+// worldParams      — from worldStore (hexSizeMiles + travel speeds convert
+//                    module text distances to hexes)
+export function solve({ batchEntities, batchModules = [], hexes, placedEntityHexes = {}, worldParams = {} }) {
+  const { constraints: moduleConstraints, warnings } =
+    inferModuleDistanceConstraints(batchModules, batchEntities, worldParams)
+
   if (!batchEntities.length) {
-    return { success: true, placements: {}, conflicts: [], routes: [] }
+    return { success: true, placements: {}, conflicts: [], routes: [], warnings }
   }
 
   const hexArray = Object.values(hexes)
   const allRelationships = batchEntities.flatMap((e) => e.relationships ?? [])
-  const spatialConstraints = inferSpatialConstraints(allRelationships)
+  const spatialConstraints = [...inferSpatialConstraints(allRelationships), ...moduleConstraints]
 
   // Map for O(1) entity lookup during scoring (used for module-cohesion bonus)
   const entityMap = Object.fromEntries(batchEntities.map((e) => [e.id, e]))
@@ -45,7 +50,7 @@ export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParam
   const placeableEntities = batchEntities.filter((e) => domains[e.id].length > 0)
 
   if (placeableEntities.length === 0) {
-    return { success: false, placements: {}, conflicts: emptyDomainConflicts, routes: [] }
+    return { success: false, placements: {}, conflicts: emptyDomainConflicts, routes: [], warnings }
   }
 
   // Backtracking CSP on placeable entities only
@@ -60,10 +65,10 @@ export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParam
     for (const e of placeableEntities) newPlacements[e.id] = btResult.placements[e.id]
     const routes = generateRoutes(hexes, newPlacements, placeableEntities)
     if (emptyDomainConflicts.length === 0) {
-      return { success: true, placements: newPlacements, conflicts: [], routes }
+      return { success: true, placements: newPlacements, conflicts: [], routes, warnings }
     }
     // Some placed, some had unsatisfiable requirements
-    return { success: false, partial: true, placements: newPlacements, conflicts: emptyDomainConflicts, routes }
+    return { success: false, partial: true, placements: newPlacements, conflicts: emptyDomainConflicts, routes, warnings }
   }
 
   // Greedy fallback — place each placeable entity at its best available hex independently
@@ -91,7 +96,7 @@ export function solve({ batchEntities, hexes, placedEntityHexes = {}, worldParam
     }
   }
 
-  return { success: false, partial: true, placements: fallback, conflicts, routes: [] }
+  return { success: false, partial: true, placements: fallback, conflicts, routes: [], warnings }
 }
 
 // ── Backtracking ──────────────────────────────────────────────────────────────
@@ -149,7 +154,7 @@ function buildDomain(entity, hexArray, placedEntityHexes, constraints, allHexes)
     // Hard proximity requirements against pre-existing placements
     for (const req of proxReqs) {
       if (!req.isHard) continue
-      const otherHexId = placedEntityHexes[req.targetEntityId]
+      const otherHexId = placedEntityHexes[proximityTargetId(req)]
       if (!otherHexId) continue
       const otherHex = allHexes[otherHexId]
       if (!otherHex) continue
@@ -219,12 +224,12 @@ function diagnoseEmptyDomain(entity, hexArray, placedEntityHexes, constraints, a
   // ── Proximity / distance constraints ─────────────────────────────────────
   for (const req of proxReqs) {
     if (!req.isHard) continue
-    const otherHexId = placedEntityHexes[req.targetEntityId]
+    const otherHexId = placedEntityHexes[proximityTargetId(req)]
     if (!otherHexId) continue
     const otherHex = allHexes[otherHexId]
     if (otherHex) {
       parts.push(
-        `proximity to ${req.targetEntityId}: ` +
+        `proximity to ${proximityTargetId(req)}: ` +
         `min ${req.minHexes ?? 0}–max ${req.maxHexes ?? '∞'} hexes, no hex satisfies`
       )
     }
@@ -261,6 +266,12 @@ function diagnoseEmptyDomain(entity, hexArray, placedEntityHexes, constraints, a
     : 'no hexes pass all hard constraints (check entity requirements)'
 }
 
+// Proximity requirements are stored as { entityId, … } (per schema and EntityForm);
+// targetEntityId is accepted for data written by older versions of the solver docs.
+function proximityTargetId(req) {
+  return req.entityId ?? req.targetEntityId
+}
+
 // ── Constraint checking ───────────────────────────────────────────────────────
 
 function checkHardConstraints(entity, hex, assignments, constraints, hexes) {
@@ -285,7 +296,7 @@ function checkHardConstraints(entity, hex, assignments, constraints, hexes) {
   // Entity's own hard proximity requirements
   for (const req of (entity.locationRequirements?.proximityRequirements ?? [])) {
     if (!req.isHard) continue
-    const otherHexId = assignments[req.targetEntityId]
+    const otherHexId = assignments[proximityTargetId(req)]
     if (!otherHexId) continue
     const otherHex = hexes[otherHexId]
     if (!otherHex) continue

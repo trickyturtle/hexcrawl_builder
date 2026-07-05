@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useWorldStore } from './store/worldStore.js'
 import { useHexStore } from './store/hexStore.js'
 import { useUiStore } from './store/uiStore.js'
@@ -52,6 +52,7 @@ export default function App() {
   const closeLibraryImport = useUiStore((s) => s.closeLibraryImport)
   const hexes = useHexStore((s) => s.hexes)
   const setHexes = useHexStore((s) => s.setHexes)
+  const setRoutes = useHexStore((s) => s.setRoutes)
   const worldParams = useWorldStore((s) => s)
   const selectedHexId = useUiStore((s) => s.selectedHexId)
   const selectedEntityId = useUiStore((s) => s.selectedEntityId)
@@ -69,6 +70,7 @@ export default function App() {
 
   const hasWorld = Object.keys(hexes).length > 0
   const fsSupported = isSupported()
+  const [confirmRegen, setConfirmRegen] = useState(false)
 
   // ── New World (accepts optional param override from MapSetupForm) ───────────
   const handleNewWorld = useCallback((overrideParams) => {
@@ -77,9 +79,10 @@ export default function App() {
     const indexed = {}
     for (const h of generated) indexed[h.id] = h
     setHexes(indexed)
+    setRoutes([])  // routes reference the old map's placements
     clearSelection()
     setSidebarView('Map')
-  }, [worldParams, setHexes, clearSelection, setSidebarView])
+  }, [worldParams, setHexes, setRoutes, clearSelection, setSidebarView])
 
   // ── Open World ─────────────────────────────────────────────────────────────
   const handleOpenWorld = useCallback(async () => {
@@ -107,7 +110,7 @@ export default function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [fsSupported, setDirHandle, setIsLoading, setError, clearError, clearSelection])
+  }, [fsSupported, setDirHandle, setIsLoading, setError, clearSelection])
 
   // ── Save World ─────────────────────────────────────────────────────────────
   const handleSaveWorld = useCallback(async () => {
@@ -266,10 +269,21 @@ export default function App() {
           )}
 
           <button
-            onClick={handleNewWorld}
-            className="w-full px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm transition-colors"
+            onClick={() => {
+              // Regenerating an existing map wipes placements, fog, and event
+              // logs — require a second click to confirm. A fresh world doesn't.
+              if (hasWorld && !confirmRegen) { setConfirmRegen(true); return }
+              setConfirmRegen(false)
+              handleNewWorld()
+            }}
+            onMouseLeave={() => setConfirmRegen(false)}
+            className={`w-full px-3 py-1.5 rounded text-sm transition-colors ${
+              confirmRegen
+                ? 'bg-red-800 hover:bg-red-700 text-red-100'
+                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+            }`}
           >
-            {hasWorld ? 'Regenerate' : 'New World'}
+            {confirmRegen ? 'Confirm — wipes placements' : hasWorld ? 'Regenerate' : 'New World'}
           </button>
 
           {fsSupported ? (
