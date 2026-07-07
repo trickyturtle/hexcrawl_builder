@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hexId, parseHexId, hexDistance, getNeighborIds, createHexGrid, getBounds } from './hexGrid.js'
+import { hexId, parseHexId, hexDistance, getNeighborIds, createHexGrid, createHexAt, getBounds } from './hexGrid.js'
 
 describe('hexId / parseHexId', () => {
   it('round-trips positive and negative axial coordinates', () => {
@@ -46,6 +46,25 @@ describe('createHexGrid', () => {
       expect(h.corners).toHaveLength(6)
       expect(parseHexId(hexId(h.q, h.r))).toEqual({ q: h.q, r: h.r })
     }
+  })
+})
+
+describe('createHexAt', () => {
+  it('matches grid-generated hex positions exactly', () => {
+    const grid = createHexGrid(5, 4)
+    const sample = grid.find((h) => h.q === 1 && h.r === 2)
+    const direct = createHexAt(1, 2)
+    expect(direct.x).toBeCloseTo(sample.x)
+    expect(direct.y).toBeCloseTo(sample.y)
+    expect(direct.corners[0].x).toBeCloseTo(sample.corners[0].x)
+    expect(direct.corners[0].y).toBeCloseTo(sample.corners[0].y)
+  })
+
+  it('supports negative coordinates for expansion beyond the origin', () => {
+    const h = createHexAt(-3, -2)
+    expect(h.corners).toHaveLength(6)
+    expect(Number.isFinite(h.x)).toBe(true)
+    expect(Number.isFinite(h.y)).toBe(true)
   })
 })
 
