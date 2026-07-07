@@ -21,12 +21,30 @@ export function getNeighborIds(q, r) {
   return AXIAL_DIRECTIONS.map(([dq, dr]) => hexId(q + dq, r + dr))
 }
 
-export function createHexGrid(width, height, hexSize = 28) {
-  const Hex = defineHex({
+function makeHexClass(hexSize) {
+  return defineHex({
     dimensions: hexSize,
     orientation: Orientation.POINTY,
     origin: 'topLeft',
   })
+}
+
+// Create a single hex at arbitrary axial coordinates (negatives included) with
+// the same pixel positioning as grid-generated hexes. Used for omnidirectional
+// map expansion and manual hex creation.
+export function createHexAt(q, r, hexSize = 28) {
+  const Hex = makeHexClass(hexSize)
+  const hex = new Hex({ q, r })
+  return {
+    q, r,
+    x: hex.x,
+    y: hex.y,
+    corners: hex.corners.map((c) => ({ x: c.x, y: c.y })),
+  }
+}
+
+export function createHexGrid(width, height, hexSize = 28) {
+  const Hex = makeHexClass(hexSize)
 
   const grid = new Grid(Hex, rectangle({ width, height }))
 

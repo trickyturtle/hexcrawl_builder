@@ -55,6 +55,17 @@ describe('generateHexes — map shapes', () => {
     expect(f).toBeGreaterThan(0.05)
     expect(f).toBeLessThan(0.5)
   })
+
+  it('continent is anchored to the map edges, not an island', () => {
+    const { hexes, gridDimensions } = generateHexes({ hexCount: 300, mapShape: 'continent' })
+    const colOf = (h) => h.q + Math.floor(h.r / 2)
+    // land runs off the east edge…
+    const east = hexes.filter((h) => colOf(h) === gridDimensions.width - 1)
+    expect(east.every((h) => h.terrain !== 'ocean')).toBe(true)
+    // …with the ocean margin along the west
+    const west = hexes.filter((h) => colOf(h) === 0)
+    expect(west.filter((h) => h.terrain === 'ocean').length).toBeGreaterThan(west.length / 2)
+  })
 })
 
 describe('generateHexes — biome distribution', () => {
@@ -172,23 +183,55 @@ describe('estimateHexesForModules — environment transition buffer', () => {
 })
 
 describe('expandHexGrid', () => {
-  it('returns only new hexes and reaches the target count', () => {
-    const { hexes } = generateHexes({ hexCount: 60 })
+  const build = (count) => {
+    const { hexes } = generateHexes({ hexCount: count })
     const existing = {}
     for (const h of hexes) existing[h.id] = h
+    return existing
+  }
+  const colOf = (h) => h.q + Math.floor(h.r / 2)
 
-    const added = expandHexGrid(existing, 120, {})
-    expect(Object.keys(existing).length + added.length).toBeGreaterThanOrEqual(120)
+  it('returns only new hexes and reaches the target count', () => {
+    const existing = build(60)
+    const added = expandHexGrid(existing, 150, {})
+    expect(Object.keys(existing).length + added.length).toBeGreaterThanOrEqual(150)
+    for (const h of added) expect(existing[h.id]).toBeUndefined()
+  })
+
+  it('expands on all four sides, keeping the old map centered', () => {
+    const existing = build(60)
+    const old = Object.values(existing)
+    const oldMinCol = Math.min(...old.map(colOf))
+    const oldMaxCol = Math.max(...old.map(colOf))
+    const oldMinRow = Math.min(...old.map((h) => h.r))
+    const oldMaxRow = Math.max(...old.map((h) => h.r))
+
+    const added = expandHexGrid(existing, 240, {})
+    expect(added.some((h) => colOf(h) < oldMinCol)).toBe(true) // west
+    expect(added.some((h) => colOf(h) > oldMaxCol)).toBe(true) // east
+    expect(added.some((h) => h.r < oldMinRow)).toBe(true)      // north
+    expect(added.some((h) => h.r > oldMaxRow)).toBe(true)      // south
+  })
+
+  it('adds water within reason — lakes and ragged seams, but mostly land', () => {
+    const existing = build(60)
+    const added = expandHexGrid(existing, 240, {})
+    const ocean = added.filter((h) => h.terrain === 'ocean').length
+    expect(ocean).toBeGreaterThan(0)
+    expect(ocean / added.length).toBeLessThan(0.35)
+  })
+
+  it('gives every new hex valid render geometry', () => {
+    const added = expandHexGrid(build(60), 240, {})
     for (const h of added) {
-      expect(existing[h.id]).toBeUndefined()
-      expect(h.terrain).not.toBe('ocean') // expansion never strands entities at sea
+      expect(h.corners).toHaveLength(6)
+      expect(Number.isFinite(h.x)).toBe(true)
+      expect(Number.isFinite(h.y)).toBe(true)
     }
   })
 
   it('is a no-op when the map is already big enough', () => {
-    const { hexes } = generateHexes({ hexCount: 100 })
-    const existing = {}
-    for (const h of hexes) existing[h.id] = h
+    const existing = build(100)
     expect(expandHexGrid(existing, 50, {})).toHaveLength(0)
   })
 })

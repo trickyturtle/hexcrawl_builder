@@ -1,4 +1,4 @@
-import { hexId, createHexGrid, getBounds, getNeighborIds } from './hexGrid.js'
+import { hexId, createHexGrid, createHexAt, getBounds, getNeighborIds } from './hexGrid.js'
 import { DEFAULT_HEX } from '../../data/schemas/defaultSchemas.js'
 import { applyBiomeAdjacency, terrainForBiome } from '../solver/biomeRules.js'
 
@@ -38,8 +38,14 @@ function shapeDistance(col, r, width, height, mapShape) {
       return 0 // simple grid: all land, no ocean ring
     case 'island':
       return dist * 1.55 + (n - 0.5) * 0.18
-    case 'continent':
-      return dist + (n - 0.5) * 0.38
+    case 'continent': {
+      // Landmass anchored to the map rather than an island: land runs off the
+      // north, east, and south edges, with an ocean margin and ragged
+      // coastline along the west only. Expansion then mostly meets land at
+      // the seams instead of an island's surrounding ocean ring.
+      const w = width > 1 ? col / (width - 1) : 1
+      return (1 - w) * 1.15 + (n - 0.5) * 0.45
+    }
     case 'irregular': {
       // two offset lobes, take the nearer one, heavy coastline noise
       const ex2 = cx > 0 ? (col - cx * 0.55) / cx : 0
@@ -114,7 +120,7 @@ function terrainAndBiome(q, r, col, width, height, params) {
   return { terrain, biome: biomeForTerrain(terrain) }
 }
 
-function biomeForTerrain(terrain) {
+export function biomeForTerrain(terrain) {
   const map = {
     plains: 'temperate',
     forest: 'temperate',
@@ -130,7 +136,7 @@ function biomeForTerrain(terrain) {
   return map[terrain] ?? 'temperate'
 }
 
-function elevationForTerrain(terrain) {
+export function elevationForTerrain(terrain) {
   if (terrain === 'mountains') return 'mountain'
   if (terrain === 'underground') return 'underground'
   return 'lowland'
@@ -188,7 +194,9 @@ function terrainForExpansionHex(q, r, params = {}) {
   const { ageOfWorld = 'mature' } = params
   const n1 = hash2(q, r)
   const n2 = hash2b(q, r)
-  const moisture = n2 * 0.6 + 0.4
+  // Moisture baseline matches the base map's interior average so expansion
+  // terrain doesn't read as a visibly denser forest block
+  const moisture = n2 * 0.6 + 0.22
   if (n1 > 0.88) return 'mountains'
   if (n1 > 0.75) return 'hills'
   if (moisture > 0.70 && n1 < 0.55) return 'forest'
@@ -240,46 +248,79 @@ export function estimateHexesForModules(modules) {
   return { min, recommended }
 }
 
+// Terrain for a single expansion hex, water included:
+// - the seam with pre-existing ocean continues raggedly (ocean/coast mix)
+//   instead of a straight wall of land against the old coastline
+// - occasional lakes / small seas from low-frequency cluster noise (~8%)
+// - otherwise the usual land noise
+function expansionTerrain(q, r, col, existingHexes, params) {
+  const touchesOldOcean = getNeighborIds(q, r)
+    .some((nid) => existingHexes[nid]?.terrain === 'ocean')
+  if (touchesOldOcean) {
+    return hash2(col + 271, r + 617) < 0.45 ? 'ocean' : 'coast'
+  }
+  const lake = hash2(Math.floor(col / 3) + 40, Math.floor(r / 3) - 73)
+  if (lake > 0.9 && hash2(col - 5, r + 9) > 0.2) return 'ocean'
+  return terrainForExpansionHex(q, r, params)
+}
+
 // ── Public: map expansion ────────────────────────────────────────────────────
-// Grows the hex grid to at least targetCount hexes.
-// Returns array of NEW hex objects to merge into the store (does not modify existing).
+// Grows the hex grid to at least targetCount hexes, expanding outward on all
+// four sides so the old map stays roughly centered (no tendrils, no single
+// growth direction). Returns array of NEW hex objects to merge into the store
+// (does not modify existing hexes — their coordinates and positions are
+// absolute, so growing left/up simply adds hexes at negative coordinates).
 export function expandHexGrid(existingHexes, targetCount, worldParams = {}) {
   const existingCount = Object.keys(existingHexes).length
   if (existingCount >= targetCount) return []
 
-  // Find current bounding box
-  const hexList = Object.values(existingHexes)
-  const maxQ = hexList.reduce((m, h) => Math.max(m, h.q), 0)
-  const maxR = hexList.reduce((m, h) => Math.max(m, h.r), 0)
-  const oldWidth  = maxQ + 1
-  const oldHeight = maxR + 1
+  // Current bounding box in offset coordinates (col = q + floor(r/2))
+  let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity
+  for (const h of Object.values(existingHexes)) {
+    const col = h.q + Math.floor(h.r / 2)
+    if (col < minCol) minCol = col
+    if (col > maxCol) maxCol = col
+    if (h.r < minRow) minRow = h.r
+    if (h.r > maxRow) maxRow = h.r
+  }
 
-  // Compute new dimensions (same 1.6 aspect ratio as generateHexes)
+  // Grow the box toward the target area, alternating which side receives each
+  // new column/row and keeping roughly the same aspect ratio as generation
   const ratio = 1.6
-  let newHeight = Math.max(oldHeight, Math.round(Math.sqrt(targetCount / ratio)))
-  let newWidth  = Math.max(oldWidth,  Math.round(targetCount / newHeight))
-  while (newWidth * newHeight < targetCount) newWidth++
+  let c0 = minCol, c1 = maxCol, r0 = minRow, r1 = maxRow
+  let colFlip = 0, rowFlip = 0
+  while ((c1 - c0 + 1) * (r1 - r0 + 1) < targetCount) {
+    const w = c1 - c0 + 1
+    const h = r1 - r0 + 1
+    if (w / h < ratio) {
+      if (colFlip++ % 2 === 0) c1++; else c0--
+    } else {
+      if (rowFlip++ % 2 === 0) r1++; else r0--
+    }
+  }
 
-  // Generate full expanded grid — existing hexes' x/y positions are unchanged because
-  // we only grow rightward/downward (origin:'topLeft' offset doesn't shift).
-  const fullGrid = createHexGrid(newWidth, newHeight, 28)
+  const width  = c1 - c0 + 1
+  const height = r1 - r0 + 1
 
   const newHexes = []
-  for (const { q, r, x, y, corners } of fullGrid) {
-    const id = hexId(q, r)
-    if (existingHexes[id]) continue
-    const col = q + Math.floor(r / 2)
-    const terrain = terrainForExpansionHex(q, r, worldParams)
-    newHexes.push({
-      ...DEFAULT_HEX,
-      id, q, r, x, y, corners,
-      terrain,
-      biome:     biomeForTerrain(terrain),
-      elevation: elevationForTerrain(terrain),
-      danger:    dangerForHex(col, r, newWidth, newHeight, worldParams),
-      magic:     magicForHex(col, r, worldParams),
-      fog: 'known',
-    })
+  for (let row = r0; row <= r1; row++) {
+    for (let col = c0; col <= c1; col++) {
+      const q = col - Math.floor(row / 2)
+      const id = hexId(q, row)
+      if (existingHexes[id]) continue
+      const terrain = expansionTerrain(q, row, col, existingHexes, worldParams)
+      newHexes.push({
+        ...DEFAULT_HEX,
+        ...createHexAt(q, row),
+        id,
+        terrain,
+        biome:     biomeForTerrain(terrain),
+        elevation: elevationForTerrain(terrain),
+        danger:    dangerForHex(col - c0, row - r0, width, height, worldParams),
+        magic:     magicForHex(col, row, worldParams),
+        fog: 'known',
+      })
+    }
   }
   return newHexes
 }

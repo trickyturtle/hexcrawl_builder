@@ -29,6 +29,7 @@ export const DEFAULT_HEX = {
   danger: 0,      // 0–3, from dangerDistribution
   magic: 0,       // 0–3, from magicDensity
   anomaly: false, // biome adjacency broken by weirdness (dimensional anomaly)
+  tags: [],       // free-form GM tags ('cleared', 'lair', …)
 }
 
 export const TERRAIN_TYPES = [
