@@ -2,6 +2,7 @@ import { hexDistance } from '../generator/hexGrid.js'
 import { inferSpatialConstraints, inferModuleDistanceConstraints } from './spatialInference.js'
 import { scorePlacement } from './scoring.js'
 import { generateRoutes } from '../generator/routeGenerator.js'
+import { terrainForBiome, TERRAFORMABLE_BIOMES } from './biomeRules.js'
 
 const MAX_ITERATIONS = 5000
 
@@ -49,41 +50,67 @@ export function solve({ batchEntities, batchModules = [], hexes, placedEntityHex
   // Empty-domain entities are reported as conflicts but do NOT block the others.
   const placeableEntities = batchEntities.filter((e) => domains[e.id].length > 0)
 
-  if (placeableEntities.length === 0) {
-    return { success: false, placements: {}, conflicts: emptyDomainConflicts, routes: [], warnings }
-  }
-
-  // Backtracking CSP on placeable entities only
-  const counter = { count: 0 }
-  const btResult = backtrack(
-    placeableEntities, domains, { ...placedEntityHexes },
-    spatialConstraints, hexes, counter, entityMap,
-  )
-
-  if (btResult.success) {
-    const newPlacements = {}
-    for (const e of placeableEntities) newPlacements[e.id] = btResult.placements[e.id]
-    const routes = generateRoutes(hexes, newPlacements, placeableEntities)
-    if (emptyDomainConflicts.length === 0) {
-      return { success: true, placements: newPlacements, conflicts: [], routes, warnings }
+  // Backtracking CSP on placeable entities
+  let assignments = { ...placedEntityHexes }
+  const newPlacements = {}
+  if (placeableEntities.length > 0) {
+    const counter = { count: 0 }
+    const btResult = backtrack(
+      placeableEntities, domains, { ...placedEntityHexes },
+      spatialConstraints, hexes, counter, entityMap,
+    )
+    if (!btResult.success) {
+      return greedyFallback(placeableEntities, domains, emptyDomainConflicts,
+        spatialConstraints, hexes, entityMap, warnings)
     }
-    // Some placed, some had unsatisfiable requirements
-    return { success: false, partial: true, placements: newPlacements, conflicts: emptyDomainConflicts, routes, warnings }
+    assignments = btResult.placements
+    for (const e of placeableEntities) newPlacements[e.id] = assignments[e.id]
   }
 
-  // Greedy fallback — place each placeable entity at its best available hex independently
+  // Terraform pass: entities whose requirements match no existing hex get the
+  // best-scoring empty hex reshaped to fit (per design, terrain/biome
+  // propagate from placed entities — the world conforms to the modules).
+  // Coastal/underground/planar requirements can't be conjured and stay
+  // conflicts.
+  const terraformed = {}
+  const conflicts = []
+  for (const c of emptyDomainConflicts) {
+    const entity = entityMap[c.entityId]
+    const t = entity && tryTerraform(entity, hexArray, hexes, assignments, spatialConstraints, entityMap)
+    if (t) {
+      newPlacements[entity.id] = t.hexId
+      assignments = { ...assignments, [entity.id]: t.hexId }
+      terraformed[t.hexId] = t.patch
+    } else {
+      conflicts.push(c)
+    }
+  }
+
+  const placedList = batchEntities.filter((e) => newPlacements[e.id])
+  const routes = generateRoutes(hexes, newPlacements, placedList)
+
+  if (conflicts.length === 0) {
+    return { success: true, placements: newPlacements, conflicts: [], routes, warnings, terraformed }
+  }
+  return { success: false, partial: true, placements: newPlacements, conflicts, routes, warnings, terraformed }
+}
+
+// ── Greedy fallback ─────────────────────────────────────────────────────────
+// When backtracking can't satisfy every hard constraint simultaneously, place
+// each placeable entity at its best available hex independently and report any
+// remaining hard-constraint violations (per design: fail loudly, don't silently
+// produce a broken world).
+function greedyFallback(placeableEntities, domains, emptyDomainConflicts, spatialConstraints, hexes, entityMap, warnings) {
   const fallback = {}
   const conflicts = [...emptyDomainConflicts]
 
   for (const entity of placeableEntities) {
-    const domain = domains[entity.id]
-    const best = domain
+    const best = domains[entity.id]
       .map((h) => ({ h, s: scorePlacement(entity, h, spatialConstraints, hexes, fallback, entityMap) }))
       .sort((a, b) => b.s - a.s)[0]
     fallback[entity.id] = best.h.id
   }
 
-  // Report hard-constraint violations among greedy placements
   for (const entity of placeableEntities) {
     if (!fallback[entity.id]) continue
     const hex = hexes[fallback[entity.id]]
@@ -97,6 +124,80 @@ export function solve({ batchEntities, batchModules = [], hexes, placedEntityHex
   }
 
   return { success: false, partial: true, placements: fallback, conflicts, routes: [], warnings }
+}
+
+// ── Terraform ───────────────────────────────────────────────────────────────
+// When an entity's biome/elevation requirements match no existing hex, reshape
+// the best-scoring candidate hex to fit rather than failing. This realises the
+// spec's "propagate terrain/biome outward from placed entities" — a module that
+// needs temperate mountains gets them, instead of a hard conflict.
+//
+// Only requirements the generator itself can produce are conjured:
+// - biome must be one of TERRAFORMABLE_BIOMES (not coastal/underground/planar)
+// - elevation 'underground' is never surfaced; other elevations are fine
+// Returns { hexId, patch } or null if the requirement can't be terraformed.
+function tryTerraform(entity, hexArray, hexes, assignments, constraints, entityMap) {
+  const reqs = entity.locationRequirements ?? {}
+  const biomeReqs = (reqs.biomeRequirements ?? []).filter((b) => b !== null && b !== undefined)
+  const elevReqs = (reqs.elevationRequirements ?? []).filter((e) => e !== 'underground')
+
+  // Pick a target biome we can actually build
+  let targetBiome = null
+  if (biomeReqs.length > 0) {
+    targetBiome = biomeReqs.find((b) => TERRAFORMABLE_BIOMES.includes(b))
+    if (!targetBiome) return null // e.g. coastal/underground/planar — can't conjure
+  }
+
+  // Pick a target terrain honouring elevation, then affinity, then biome
+  const affinity = reqs.terrainAffinity ?? []
+  let targetTerrain
+  if (elevReqs.includes('mountain')) {
+    targetTerrain = 'mountains'
+  } else if (affinity.length > 0 && affinity[0] !== 'ocean' && affinity[0] !== 'coast') {
+    targetTerrain = affinity[0]
+  } else if (targetBiome) {
+    targetTerrain = terrainForBiome(targetBiome, 0.5)
+  } else {
+    targetTerrain = 'plains'
+  }
+  if (!targetBiome) targetBiome = biomeForSurfaceTerrain(targetTerrain)
+
+  // Candidate land hexes not already holding a placement this batch. Prefer
+  // reshaping plains/hills (low-value filler) over forests, deserts, etc.
+  const taken = new Set(Object.values(assignments))
+  const candidates = hexArray.filter((h) =>
+    h.terrain !== 'ocean' && h.terrain !== 'coast' && !taken.has(h.id)
+  )
+  if (candidates.length === 0) return null
+
+  const reshapeCost = (h) => (h.terrain === 'plains' ? 0 : h.terrain === 'hills' ? 1 : 2)
+  const best = candidates
+    .map((h) => ({
+      h,
+      // low reshape cost first, then soft-constraint score for good placement
+      key: reshapeCost(h) * 1000 - scorePlacement(entity, h, constraints, hexes, assignments, entityMap),
+    }))
+    .sort((a, b) => a.key - b.key)[0].h
+
+  return {
+    hexId: best.id,
+    patch: {
+      terrain: targetTerrain,
+      biome: targetBiome,
+      elevation: targetTerrain === 'mountains' ? 'mountain' : 'lowland',
+    },
+  }
+}
+
+// Surface-terrain → biome without the mountains→cold shortcut, so a terraformed
+// temperate-mountain hex keeps its requested biome
+function biomeForSurfaceTerrain(terrain) {
+  switch (terrain) {
+    case 'desert': return 'arid'
+    case 'swamp': return 'tropical'
+    case 'tundra': return 'cold'
+    default: return 'temperate'
+  }
 }
 
 // ── Backtracking ──────────────────────────────────────────────────────────────
