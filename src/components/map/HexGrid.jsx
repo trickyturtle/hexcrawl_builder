@@ -2,6 +2,10 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useHexStore } from '../../store/hexStore.js'
 import { useUiStore } from '../../store/uiStore.js'
 import { useModuleStore } from '../../store/moduleStore.js'
+import { useEntityStore } from '../../store/entityStore.js'
+import { useWorldStore } from '../../store/worldStore.js'
+import { getNeighborIds } from '../../engine/generator/hexGrid.js'
+import { colorForId } from './overlayColors.js'
 import HexCell from './HexCell.jsx'
 
 const PADDING = 60
@@ -15,6 +19,8 @@ export default function HexGrid() {
   const overlays = useUiStore((s) => s.overlays)
   const batches = useModuleStore((s) => s.batches)
   const modules = useModuleStore((s) => s.modules)
+  const entities = useEntityStore((s) => s.entities)
+  const season = useWorldStore((s) => s.currentSeason)
 
   const [pan, setPan] = useState({ x: PADDING, y: PADDING })
   const [zoom, setZoom] = useState(1)
@@ -116,6 +122,41 @@ export default function HexGrid() {
     return map
   }, [overlays.moduleFootprints, batches, modules, hexes])
 
+  // ── Political overlay data ─────────────────────────────────────────────────
+  // Per-hex primitives (memo-friendly HexCell props): faction tint color,
+  // nation tint + border flag, religion marker colors.
+  const politicalMap = useMemo(() => {
+    const wantFactions = overlays.factions
+    const wantNations = overlays.nations
+    const wantReligion = overlays.religion
+    if (!wantFactions && !wantNations && !wantReligion) return {}
+
+    const isNation = (id) => entities[id]?.subclass === 'Nation'
+    const nationOf = (hex) => (hex.factionIds ?? []).find(isNation) ?? null
+
+    const map = {}
+    for (const [hid, hex] of Object.entries(hexes)) {
+      const entry = {}
+      if (wantFactions) {
+        const fid = (hex.factionIds ?? [])[0]
+        if (fid) entry.factionColor = colorForId(fid)
+      }
+      if (wantNations) {
+        const nid = nationOf(hex)
+        if (nid) {
+          entry.nationColor = colorForId(nid)
+          entry.nationBorder = getNeighborIds(hex.q, hex.r)
+            .some((n) => !hexes[n] || nationOf(hexes[n]) !== nid)
+        }
+      }
+      if (wantReligion && (hex.religionIds ?? []).length > 0) {
+        entry.religionKey = hex.religionIds.map(colorForId).join('|')
+      }
+      if (Object.keys(entry).length > 0) map[hid] = entry
+    }
+    return map
+  }, [overlays.factions, overlays.nations, overlays.religion, hexes, entities])
+
   // ── Fit to screen on first load ───────────────────────────────────────────
   const hexArray = Object.values(hexes)
 
@@ -174,6 +215,11 @@ export default function HexGrid() {
             dangerVisible={overlays.danger}
             magicVisible={overlays.magic}
             batchIndex={overlays.moduleFootprints ? (hexBatchMap[hex.id] ?? -1) : -1}
+            factionColor={politicalMap[hex.id]?.factionColor ?? null}
+            nationColor={politicalMap[hex.id]?.nationColor ?? null}
+            nationBorder={politicalMap[hex.id]?.nationBorder ?? false}
+            religionKey={politicalMap[hex.id]?.religionKey ?? null}
+            season={season}
           />
         ))}
 

@@ -54,6 +54,45 @@ export default function EntityDetail({ entityId }) {
           </Section>
         )}
 
+        {/* ── Subclass fields ─────────────────────────────────────── */}
+        {(entity.subclass === 'Faction' || entity.subclass === 'Nation') && (
+          <Section label={entity.subclass === 'Nation' ? 'Nation' : 'Faction'}>
+            <div className="space-y-1 text-xs">
+              <div className="flex gap-2">
+                <span className="text-slate-600 w-20 shrink-0">Home base</span>
+                {entity.homeBaseEntityId && entities[entity.homeBaseEntityId] ? (
+                  <button
+                    onClick={() => selectEntity(entity.homeBaseEntityId)}
+                    className="text-slate-200 hover:text-white hover:underline"
+                  >
+                    {entities[entity.homeBaseEntityId].name || 'Unnamed'}
+                  </button>
+                ) : (
+                  <span className="text-slate-500 italic">own hex</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <span className="text-slate-600 w-20 shrink-0">Territory</span>
+                <span className="text-slate-400 capitalize">
+                  {entity.territoryTendency ?? 'concentrated'} · {entity.territorySize ?? 'medium'}
+                </span>
+              </div>
+              {entity.subclass === 'Nation' && entity.diplomaticStatus && (
+                <div className="flex gap-2">
+                  <span className="text-slate-600 w-20 shrink-0">Diplomacy</span>
+                  <span className="text-slate-400">{entity.diplomaticStatus}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+
+        {entity.subclass === 'Event' && entity.timelinePosition && (
+          <Section label="Timeline">
+            <p className="text-xs text-slate-400">{entity.timelinePosition}</p>
+          </Section>
+        )}
+
         {/* ── Tags ────────────────────────────────────────────────── */}
         {entity.tags?.length > 0 && (
           <Section label="Tags">

@@ -178,6 +178,89 @@ export default function EntityForm({ entityId }) {
               </select>
             </Field>
 
+            {/* Faction / Nation territory fields — drive the territory overlays */}
+            {(form.subclass === 'Faction' || form.subclass === 'Nation') && (
+              <>
+                <Field label="Home Base">
+                  <select
+                    value={form.homeBaseEntityId ?? ''}
+                    onChange={(e) => set('homeBaseEntityId', e.target.value || null)}
+                    className={INPUT}
+                  >
+                    <option value="">— this entity's own hex —</option>
+                    {otherEntities
+                      .filter((e) => e.subclass === 'Location')
+                      .map((e) => (
+                        <option key={e.id} value={e.id}>{e.name || 'Unnamed'}</option>
+                      ))}
+                  </select>
+                  <p className="text-[10px] text-slate-600 mt-1">
+                    Territory grows outward from here once placed on the map
+                  </p>
+                </Field>
+                <Field label="Territory Tendency">
+                  <div className="flex gap-1.5">
+                    {['concentrated', 'diffuse'].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => set('territoryTendency', t)}
+                        className={`flex-1 py-1 text-xs rounded border capitalize transition-colors ${
+                          (form.territoryTendency ?? 'concentrated') === t
+                            ? 'border-blue-500 text-blue-300 bg-blue-900/30'
+                            : 'border-slate-600 text-slate-500 hover:border-slate-400'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Territory Size">
+                  <div className="flex gap-1.5">
+                    {['small', 'medium', 'large'].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => set('territorySize', t)}
+                        className={`flex-1 py-1 text-xs rounded border capitalize transition-colors ${
+                          (form.territorySize ?? 'medium') === t
+                            ? 'border-blue-500 text-blue-300 bg-blue-900/30'
+                            : 'border-slate-600 text-slate-500 hover:border-slate-400'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              </>
+            )}
+
+            {form.subclass === 'Nation' && (
+              <Field label="Diplomatic Status">
+                <input
+                  type="text"
+                  value={form.diplomaticStatus ?? ''}
+                  onChange={(e) => set('diplomaticStatus', e.target.value)}
+                  placeholder="e.g. at war with the Reach, truce with the Guild"
+                  className={INPUT}
+                />
+              </Field>
+            )}
+
+            {form.subclass === 'Event' && (
+              <Field label="Timeline Position">
+                <input
+                  type="text"
+                  value={form.timelinePosition ?? ''}
+                  onChange={(e) => set('timelinePosition', e.target.value)}
+                  placeholder="e.g. 300 years ago, ongoing, prophesied"
+                  className={INPUT}
+                />
+              </Field>
+            )}
+
             <Field label="Locale">
               <input
                 type="text"

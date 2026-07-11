@@ -15,6 +15,9 @@ const SPEED_LABELS = { road: 'Road', crossCountry: 'Cross-country', forest: 'For
 
 const SECTIONS = ['Preset', 'Size', 'Shape', 'World', 'Biomes']
 
+// Seasonal travel-speed multipliers (winter snow, spring mud)
+const SEASON_SPEED_MULT = { winter: 0.75, spring: 0.9, summer: 1, autumn: 1 }
+
 function extractForm(ws) {
   return {
     hexCount: ws.hexCount,
@@ -132,6 +135,11 @@ export default function MapSetupForm({ onRegenerate }) {
             </Field>
 
             <Field label={`Travel Speeds (miles/day)${isCustomPreset ? '' : ' — read-only'}`}>
+              {SEASON_SPEED_MULT[worldStore.currentSeason] < 1 && (
+                <p className="text-[10px] text-sky-300/80 mb-1.5 capitalize">
+                  {worldStore.currentSeason}: effective speeds ×{SEASON_SPEED_MULT[worldStore.currentSeason]}
+                </p>
+              )}
               <div className="space-y-2">
                 {SPEED_KEYS.map((k) => {
                   const mph = form.travelSpeedAssumptions[k] ?? 0

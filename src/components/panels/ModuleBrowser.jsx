@@ -12,6 +12,7 @@ import {
   generateHexes,
 } from '../../engine/generator/terrainGenerator.js'
 import { applyBiomeAdjacency } from '../../engine/solver/biomeRules.js'
+import { generateTerritories } from '../../engine/generator/territoryGenerator.js'
 import { applyBatchRevert } from '../../engine/batchRevert.js'
 
 export default function ModuleBrowser() {
@@ -206,6 +207,21 @@ export default function ModuleBrowser() {
     }
 
     if (result.routes?.length > 0) addRoutes(result.routes)
+
+    // Recompute faction/nation territories and religion spread across the map
+    // now that the batch's entities are placed. Diff-only patches; priors are
+    // recorded so batch revert restores the previous territory state.
+    const territoryPatches = generateTerritories(
+      workingHexes,
+      useEntityStore.getState().entities,
+      [...routes, ...(result.routes ?? [])],
+      worldParams,
+    )
+    for (const [hid, patch] of Object.entries(territoryPatches)) {
+      recordPriorValues(hid, patch)
+      workingHexes[hid] = { ...workingHexes[hid], ...patch }
+      updateHex(hid, patch)
+    }
 
     commitBatch({
       placements: appliedPlacements,

@@ -8,7 +8,7 @@ const WORLD_PARAMS_KEYS = [
   'hexCount', 'dimensions', 'hexSizeMiles', 'mapShape',
   'settlementDensity', 'politicalFragmentation', 'dangerDistribution',
   'magicDensity', 'ageOfWorld', 'weirdnessFactor', 'biomeDistribution',
-  'systemPreset', 'travelSpeedAssumptions',
+  'systemPreset', 'travelSpeedAssumptions', 'currentSeason',
 ]
 
 // world.json files written before the weirdnessFactor rename used misspelled
