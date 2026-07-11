@@ -74,6 +74,48 @@ describe('solve', () => {
     expect(result.conflicts[0].reason).toContain('planar')
   })
 
+  it('terraforms a hex for temperate mountains when none exist on the map', () => {
+    // arid map — guaranteed to contain no temperate mountains
+    const { hexes: arr } = generateHexes({ hexCount: 200, mapShape: 'rectangle', biomeDistribution: { arid: 100 } })
+    const hexes = {}
+    for (const h of arr) hexes[h.id] = h
+    expect(Object.values(hexes).some((h) => h.biome === 'temperate' && h.elevation === 'mountain')).toBe(false)
+
+    const entity = makeEntity({
+      name: 'Mountain Monastery',
+      locationRequirements: {
+        terrainAffinity: [], proximityRequirements: [],
+        biomeRequirements: ['temperate'], elevationRequirements: ['mountain'],
+      },
+    })
+    const result = solve({ batchEntities: [entity], hexes, worldParams: {} })
+    expect(result.success).toBe(true)
+    const hexId = result.placements[entity.id]
+    expect(hexId).toBeDefined()
+    expect(result.terraformed[hexId]).toMatchObject({
+      terrain: 'mountains', biome: 'temperate', elevation: 'mountain',
+    })
+  })
+
+  it('does NOT terraform coastal/underground/planar (still a conflict)', () => {
+    const hexes = makeHexes()
+    for (const biome of ['coastal', 'underground', 'planar']) {
+      const entity = makeEntity({
+        name: `${biome} site`,
+        locationRequirements: {
+          terrainAffinity: [], elevationRequirements: [], proximityRequirements: [],
+          biomeRequirements: [biome],
+        },
+      })
+      const result = solve({ batchEntities: [entity], hexes, worldParams: {} })
+      // coastal may exist naturally; only assert un-terraformable biomes that don't
+      if (!Object.values(hexes).some((h) => h.biome === biome)) {
+        expect(result.success).toBe(false)
+        expect(result.placements[entity.id]).toBeUndefined()
+      }
+    }
+  })
+
   it('honors hard proximity requirements written with the schema field name entityId', () => {
     const hexes = makeHexes(200)
     const anchor = makeEntity({ name: 'Anchor' })

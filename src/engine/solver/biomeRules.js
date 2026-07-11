@@ -19,11 +19,17 @@ export function validateBiomeAdjacency(biomeA, biomeB, weirdnessFactor) {
   return score >= threshold
 }
 
+// Biomes the solver may write onto a hex to satisfy placement requirements.
+// Coastal needs a real coastline, underground is independent of the surface,
+// and planar only appears through weirdness anomalies — none can be conjured.
+export const TERRAFORMABLE_BIOMES = ['temperate', 'tropical', 'arid', 'cold', 'magical']
+
 // Representative terrain for a biome, picked by a [0,1) noise value so a biome
 // region isn't a single uniform terrain type.
 export function terrainForBiome(biome, n = 0.7) {
   switch (biome) {
-    case 'temperate': return n < 0.35 ? 'forest' : n < 0.5 ? 'hills' : 'plains'
+    // temperate mountains are rare but possible (elevation isn't climate)
+    case 'temperate': return n < 0.06 ? 'mountains' : n < 0.38 ? 'forest' : n < 0.52 ? 'hills' : 'plains'
     case 'tropical':  return n < 0.45 ? 'swamp' : 'forest'
     case 'arid':      return 'desert'
     case 'cold':      return n < 0.55 ? 'tundra' : 'mountains'

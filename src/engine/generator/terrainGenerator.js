@@ -117,7 +117,13 @@ function terrainAndBiome(q, r, col, width, height, params) {
   const cx = (width - 1) / 2
   const cy = (height - 1) / 2
   const terrain = noiseTerrain(q, r, col, cx, cy, d, params)
-  return { terrain, biome: biomeForTerrain(terrain) }
+  return { terrain, biome: terrain === 'mountains' ? mountainBiome(q, r) : biomeForTerrain(terrain) }
+}
+
+// Elevation isn't climate: mountain ranges are mostly cold but lower temperate
+// ranges exist too, so entities requiring temperate mountains can be placed
+function mountainBiome(q, r) {
+  return hash2(q + 88, r + 44) < 0.28 ? 'temperate' : 'cold'
 }
 
 export function biomeForTerrain(terrain) {
@@ -314,7 +320,7 @@ export function expandHexGrid(existingHexes, targetCount, worldParams = {}) {
         ...createHexAt(q, row),
         id,
         terrain,
-        biome:     biomeForTerrain(terrain),
+        biome:     terrain === 'mountains' ? mountainBiome(q, row) : biomeForTerrain(terrain),
         elevation: elevationForTerrain(terrain),
         danger:    dangerForHex(col - c0, row - r0, width, height, worldParams),
         magic:     magicForHex(col, row, worldParams),

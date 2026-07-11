@@ -162,6 +162,18 @@ export default function ModuleBrowser() {
       return
     }
 
+    // Apply terraform patches first (hexes reshaped to meet an entity's
+    // requirements), so terrain propagation below sees the reshaped state.
+    // Recorded in undoPatches so revert restores the original terrain.
+    if (result.terraformed) {
+      for (const [hexId, patch] of Object.entries(result.terraformed)) {
+        if (!workingHexes[hexId]) continue
+        recordPriorValues(hexId, patch)
+        workingHexes[hexId] = { ...workingHexes[hexId], ...patch }
+        updateHex(hexId, patch)
+      }
+    }
+
     // Apply placements to hexStore — group by hex first to avoid last-write-wins overwrite
     const appliedPlacements = {}
     if (result.placements && Object.keys(result.placements).length > 0) {

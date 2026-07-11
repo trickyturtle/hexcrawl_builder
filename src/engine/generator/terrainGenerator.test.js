@@ -23,6 +23,23 @@ describe('generateHexes', () => {
     }
   })
 
+  it('can produce temperate mountains (rare but possible)', () => {
+    // aggregate a few maps so the assertion isn't flaky on a single seed
+    let temperateMtn = 0
+    for (let i = 0; i < 5; i++) {
+      const { hexes } = generateHexes({ hexCount: 300 })
+      temperateMtn += hexes.filter((h) => h.terrain === 'mountains' && h.biome === 'temperate').length
+    }
+    expect(temperateMtn).toBeGreaterThan(0)
+  })
+
+  it('most mountains are still cold, not temperate', () => {
+    const { hexes } = generateHexes({ hexCount: 400 })
+    const mtns = hexes.filter((h) => h.terrain === 'mountains')
+    const cold = mtns.filter((h) => h.biome === 'cold').length
+    if (mtns.length > 0) expect(cold).toBeGreaterThanOrEqual(mtns.length / 2)
+  })
+
   it('keeps the ocean ring on the map edge, not the interior (offset-column shape math)', () => {
     const { hexes, gridDimensions } = generateHexes({ hexCount: 300, mapShape: 'circular' })
     const { width, height } = gridDimensions
