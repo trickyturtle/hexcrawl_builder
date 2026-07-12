@@ -77,9 +77,18 @@ export default function EntityForm({ entityId }) {
     setRelForm('new')
   }
 
-  const commitNewRel = () => {
+  const startEditRel = (rel) => {
+    setNewRel({ ...rel, distanceConstraint: rel.distanceConstraint ? { ...rel.distanceConstraint } : null })
+    setRelForm(rel.id)
+  }
+
+  const commitRel = () => {
     if (!newRel?.toEntityId) return
-    set('relationships', [...form.relationships, newRel])
+    if (relForm === 'new') {
+      set('relationships', [...form.relationships, newRel])
+    } else {
+      set('relationships', form.relationships.map((r) => (r.id === relForm ? newRel : r)))
+    }
     setRelForm(null)
     setNewRel(null)
   }
@@ -177,6 +186,31 @@ export default function EntityForm({ entityId }) {
                 ))}
               </select>
             </Field>
+
+            {/* Location / GeographicFeature footprint — hexes the entity spans */}
+            {(form.subclass === 'Location' || form.subclass === 'GeographicFeature') && (
+              <Field label="Hex Footprint">
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => set('hexFootprint', n)}
+                      className={`flex-1 py-1 text-xs rounded border transition-colors ${
+                        (form.hexFootprint ?? 1) === n
+                          ? 'border-blue-500 text-blue-300 bg-blue-900/30'
+                          : 'border-slate-600 text-slate-500 hover:border-slate-400'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">
+                  Hexes this {form.subclass === 'GeographicFeature' ? 'feature' : 'place'} spans — placement claims adjacent land hexes
+                </p>
+              </Field>
+            )}
 
             {/* Faction / Nation territory fields — drive the territory overlays */}
             {(form.subclass === 'Faction' || form.subclass === 'Nation') && (
@@ -389,25 +423,41 @@ export default function EntityForm({ entityId }) {
                           {other?.name ?? rel.toEntityId ?? 'Unknown'}
                         </span>
                         {rel.label && <span className="text-slate-500 italic truncate">"{rel.label}"</span>}
+                        {rel.distanceConstraint && (
+                          <span className="text-slate-600 shrink-0">
+                            {rel.distanceConstraint.min ?? 0}–{rel.distanceConstraint.max ?? '∞'}h
+                            {rel.distanceIsHard ? '!' : ''}
+                          </span>
+                        )}
                       </div>
-                      <button
-                        onClick={() => removeRel(rel.id)}
-                        className="text-slate-600 hover:text-red-400 transition-colors shrink-0"
-                      >
-                        ✕
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => startEditRel(rel)}
+                          className="text-slate-600 hover:text-blue-400 transition-colors"
+                          title="Edit relationship"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => removeRel(rel.id)}
+                          className="text-slate-600 hover:text-red-400 transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
                   </li>
                 )
               })}
             </ul>
 
-            {relForm === 'new' && newRel ? (
+            {relForm && newRel ? (
               <RelationshipSubForm
                 rel={newRel}
+                isNew={relForm === 'new'}
                 onChange={setNewRel}
                 entities={otherEntities}
-                onCommit={commitNewRel}
+                onCommit={commitRel}
                 onCancel={() => { setRelForm(null); setNewRel(null) }}
               />
             ) : (
@@ -670,8 +720,16 @@ function ProximityEditor({ requirements, entities, onChange }) {
   )
 }
 
-function RelationshipSubForm({ rel, onChange, entities, onCommit, onCancel }) {
+function RelationshipSubForm({ rel, isNew = true, onChange, entities, onCommit, onCancel }) {
   const set = (k, v) => onChange({ ...rel, [k]: v })
+  const setDistance = (k, raw) => {
+    const v = raw === '' ? null : Math.max(0, Number(raw))
+    const next = { ...(rel.distanceConstraint ?? {}), [k]: v }
+    // both bounds cleared → no constraint at all
+    const empty = (next.min === null || next.min === undefined)
+      && (next.max === null || next.max === undefined)
+    onChange({ ...rel, distanceConstraint: empty ? null : next })
+  }
   return (
     <div className="border border-slate-600 rounded p-3 space-y-2 text-xs bg-slate-800/40">
       <Field label="Target Entity">
@@ -715,6 +773,45 @@ function RelationshipSubForm({ rel, onChange, entities, onCommit, onCancel }) {
           </select>
         </Field>
       </div>
+      <Field label="Distance Constraint (hexes)">
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number" min={0}
+            value={rel.distanceConstraint?.min ?? ''}
+            onChange={(e) => setDistance('min', e.target.value)}
+            placeholder="min"
+            className={`${INPUT} w-16 text-center`}
+          />
+          <span className="text-slate-600">–</span>
+          <input
+            type="number" min={0}
+            value={rel.distanceConstraint?.max ?? ''}
+            onChange={(e) => setDistance('max', e.target.value)}
+            placeholder="max"
+            className={`${INPUT} w-16 text-center`}
+          />
+          <label className="flex items-center gap-1 text-slate-400 cursor-pointer ml-1">
+            <input
+              type="checkbox"
+              checked={rel.distanceIsHard ?? false}
+              onChange={(e) => set('distanceIsHard', e.target.checked)}
+            />
+            hard
+          </label>
+        </div>
+        <p className="text-[10px] text-slate-600 mt-1">
+          Leave blank for none. Hard constraints must be satisfied; soft ones are preferred.
+        </p>
+      </Field>
+      <Field label="Spatial Exception">
+        <input
+          type="text"
+          value={rel.spatialException ?? ''}
+          onChange={(e) => set('spatialException', e.target.value)}
+          placeholder="e.g. exiled — deliberately separated, historical only"
+          className={INPUT}
+        />
+      </Field>
       <div className="flex gap-4 text-xs text-slate-400">
         <label className="flex items-center gap-1.5 cursor-pointer">
           <input type="checkbox" checked={rel.impliesSpatialAccess}
@@ -728,7 +825,9 @@ function RelationshipSubForm({ rel, onChange, entities, onCommit, onCancel }) {
         </label>
       </div>
       <div className="flex gap-2 pt-1">
-        <button onClick={onCommit} disabled={!rel.toEntityId} className={BTN_PRIMARY}>Add</button>
+        <button onClick={onCommit} disabled={!rel.toEntityId} className={BTN_PRIMARY}>
+          {isNew ? 'Add' : 'Save'}
+        </button>
         <button onClick={onCancel} className={BTN_SECONDARY}>Cancel</button>
       </div>
     </div>

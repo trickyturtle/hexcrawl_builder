@@ -223,7 +223,8 @@ export default function HexGrid() {
           />
         ))}
 
-        {/* Trade route lines */}
+        {/* Trade route lines — land legs in gold dashes, sea legs (shipping)
+            in blue dots so mixed routes read at a glance */}
         {overlays.tradeRoutes && routes.map((route) => {
           const pts = route.path
             .map((hid) => {
@@ -231,21 +232,27 @@ export default function HexGrid() {
               if (!h?.corners) return null
               const cx = h.corners.reduce((s, c) => s + c.x, 0) / h.corners.length
               const cy = h.corners.reduce((s, c) => s + c.y, 0) / h.corners.length
-              return [cx, cy]
+              return { x: cx, y: cy, sea: h.terrain === 'ocean' }
             })
             .filter(Boolean)
           if (pts.length < 2) return null
           return (
-            <polyline
-              key={route.id}
-              points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
-              stroke="rgba(248,231,28,0.5)"
-              strokeWidth={1.2}
-              fill="none"
-              strokeDasharray="4,3"
-              strokeLinecap="round"
-              style={{ pointerEvents: 'none' }}
-            />
+            <g key={route.id} style={{ pointerEvents: 'none' }}>
+              {pts.slice(0, -1).map((a, i) => {
+                const b = pts[i + 1]
+                const sea = a.sea || b.sea
+                return (
+                  <line
+                    key={i}
+                    x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                    stroke={sea ? 'rgba(96,205,255,0.75)' : 'rgba(248,231,28,0.55)'}
+                    strokeWidth={sea ? 1.4 : 1.2}
+                    strokeDasharray={sea ? '1.5,3.5' : '4,3'}
+                    strokeLinecap="round"
+                  />
+                )
+              })}
+            </g>
           )
         })}
       </g>

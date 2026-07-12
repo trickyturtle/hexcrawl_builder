@@ -307,6 +307,29 @@ export default function HexDetailPanel({ hexId }) {
               </button>
             ))}
           </div>
+          {/* Reveal by radius — GM convenience for party movement */}
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-[10px] text-slate-600">Reveal radius</span>
+            {[1, 2, 3].map((radius) => (
+              <button
+                key={radius}
+                onClick={() => {
+                  for (const other of Object.values(allHexes)) {
+                    const dq = other.q - hex.q
+                    const dr = other.r - hex.r
+                    const dist = (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2
+                    if (dist <= radius && other.fog !== 'known') {
+                      updateHex(other.id, { fog: 'known' })
+                    }
+                  }
+                }}
+                className="text-xs px-2 py-0.5 rounded border border-slate-600 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors"
+                title={`Set all hexes within ${radius} to Known`}
+              >
+                {radius}
+              </button>
+            ))}
+          </div>
         </Section>
 
         {/* ── Entities ────────────────────────────────────────────── */}

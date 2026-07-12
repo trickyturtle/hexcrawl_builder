@@ -1,5 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { inferSpatialConstraints, inferModuleDistanceConstraints } from './spatialInference.js'
+import { inferSpatialConstraints, inferModuleDistanceConstraints, inferModuleRelationshipConstraints } from './spatialInference.js'
+
+describe('inferModuleRelationshipConstraints', () => {
+  const allModules = {
+    'mod-a': { id: 'mod-a', name: 'A', entryPoints: ['ent-a1'], entities: ['ent-a1', 'ent-a2'], moduleRelationships: ['mod-b'] },
+    'mod-b': { id: 'mod-b', name: 'B', entryPoints: [], entities: ['ent-b1'], moduleRelationships: ['mod-a'] },
+  }
+
+  it('links entry points (or first entities) with a soft proximity constraint', () => {
+    const constraints = inferModuleRelationshipConstraints([allModules['mod-a']], allModules)
+    expect(constraints).toHaveLength(1)
+    expect(constraints[0]).toMatchObject({
+      fromEntityId: 'ent-a1', // A's entry point
+      toEntityId: 'ent-b1',   // B has no entry points → first entity
+      isHard: false,
+      maxHexes: 8,
+    })
+  })
+
+  it('deduplicates reciprocal module relationships', () => {
+    const constraints = inferModuleRelationshipConstraints(
+      [allModules['mod-a'], allModules['mod-b']], allModules,
+    )
+    expect(constraints).toHaveLength(1)
+  })
+
+  it('ignores relationships to unknown modules', () => {
+    const lonely = { id: 'mod-x', entities: ['e'], moduleRelationships: ['missing'] }
+    expect(inferModuleRelationshipConstraints([lonely], allModules)).toHaveLength(0)
+  })
+})
 
 describe('inferSpatialConstraints', () => {
   it('reads schema field names min/max on distanceConstraint', () => {

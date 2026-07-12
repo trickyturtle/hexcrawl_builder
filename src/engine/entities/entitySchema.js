@@ -25,6 +25,9 @@ export function createEntity(fields = {}) {
     diplomaticStatus: '',             // free text (e.g. "at war with the Reach")
     // Event only
     timelinePosition: '',             // free text (e.g. "300 years ago", "ongoing")
+    // Location / GeographicFeature: number of hexes the entity spans (1–7).
+    // The solver places the primary hex, then claims adjacent land hexes.
+    hexFootprint: 1,
     sources: [],
     // locale: optional string that groups entities within a module into geographic clusters.
     // Entities sharing a locale are placed near each other; entities in different locales
