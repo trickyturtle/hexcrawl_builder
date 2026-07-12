@@ -16,6 +16,8 @@ import MapSetupForm from './components/forms/MapSetupForm.jsx'
 import LibraryImport from './components/forms/LibraryImport.jsx'
 import { isSupported, pickDirectory } from './persistence/fileSystem.js'
 import { saveWorld, loadWorld, isWorldDirectory } from './persistence/worldIO.js'
+import { indexVault } from './persistence/obsidianVault.js'
+import { useVaultStore } from './store/vaultStore.js'
 
 // ── Error boundary ────────────────────────────────────────────────────────────
 class ErrorBoundary extends React.Component {
@@ -71,6 +73,30 @@ export default function App() {
   const hasWorld = Object.keys(hexes).length > 0
   const fsSupported = isSupported()
   const [confirmRegen, setConfirmRegen] = useState(false)
+
+  const vaultName = useVaultStore((s) => s.vaultName)
+  const noteIndex = useVaultStore((s) => s.noteIndex)
+  const vaultIndexing = useVaultStore((s) => s.isIndexing)
+
+  // ── Connect Obsidian vault ─────────────────────────────────────────────────
+  const handleConnectVault = useCallback(async () => {
+    if (!fsSupported) return
+    let dir
+    try {
+      dir = await pickDirectory()
+    } catch (e) {
+      if (e.name === 'AbortError') return
+      useVaultStore.getState().setError(e.message)
+      return
+    }
+    useVaultStore.getState().setIndexing(true)
+    try {
+      const index = await indexVault(dir)
+      useVaultStore.getState().setVault(dir, index)
+    } catch (e) {
+      useVaultStore.getState().setError(`Vault indexing failed: ${e.message}`)
+    }
+  }, [fsSupported])
 
   // ── New World (accepts optional param override from MapSetupForm) ───────────
   const handleNewWorld = useCallback((overrideParams) => {
@@ -285,6 +311,31 @@ export default function App() {
           >
             {confirmRegen ? 'Confirm — wipes placements' : hasWorld ? 'Regenerate' : 'New World'}
           </button>
+
+          {/* Obsidian vault connection */}
+          {fsSupported && (
+            vaultName ? (
+              <div className="flex items-center gap-1.5 text-xs text-violet-300/90">
+                <span>⬡</span>
+                <span className="truncate flex-1" title={vaultName}>
+                  {vaultName} · {noteIndex?.count ?? 0} notes
+                </span>
+                <button
+                  onClick={() => useVaultStore.getState().disconnect()}
+                  className="text-slate-600 hover:text-slate-400 shrink-0"
+                  title="Disconnect vault"
+                >✕</button>
+              </div>
+            ) : (
+              <button
+                onClick={handleConnectVault}
+                disabled={vaultIndexing}
+                className="w-full px-2 py-1.5 rounded border border-violet-800/60 hover:border-violet-600 text-violet-300/80 hover:text-violet-200 text-xs transition-colors disabled:opacity-40"
+              >
+                {vaultIndexing ? 'Indexing vault…' : '⬡ Connect Obsidian vault…'}
+              </button>
+            )
+          )}
 
           {fsSupported ? (
             <div className="grid grid-cols-2 gap-1.5">

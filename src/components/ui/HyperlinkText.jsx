@@ -1,6 +1,8 @@
 import React from 'react'
 import { useEntityStore } from '../../store/entityStore.js'
 import { useUiStore } from '../../store/uiStore.js'
+import { useVaultStore } from '../../store/vaultStore.js'
+import { resolveNoteLink, buildObsidianUri } from '../../persistence/obsidianVault.js'
 
 // Parses text for [[Entity Name]] or [[Entity Name|display text]] patterns
 // and renders them as clickable links that navigate to the named entity.
@@ -12,6 +14,8 @@ const LINK_SOURCE = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/.source
 export default function HyperlinkText({ text, className = '' }) {
   const entities = useEntityStore((s) => s.entities)
   const selectEntity = useUiStore((s) => s.selectEntity)
+  const vaultName = useVaultStore((s) => s.vaultName)
+  const noteIndex = useVaultStore((s) => s.noteIndex)
 
   // Build name → entity lookup (case-insensitive).
   // Hooks must run unconditionally — the empty-text early return comes after.
@@ -54,6 +58,20 @@ export default function HyperlinkText({ text, className = '' }) {
               className="text-blue-400 hover:text-blue-300 hover:underline transition-colors"
             >
               {p.display}
+            </button>
+          )
+        }
+        // No entity match — try the connected Obsidian vault
+        const notePath = noteIndex ? resolveNoteLink(noteIndex, p.targetName) : null
+        if (notePath) {
+          return (
+            <button
+              key={i}
+              onClick={() => window.open(buildObsidianUri(vaultName, notePath), '_blank', 'noreferrer')}
+              title={`Open in Obsidian: ${notePath}`}
+              className="text-violet-400 hover:text-violet-300 hover:underline transition-colors"
+            >
+              ⬡{p.display}
             </button>
           )
         }

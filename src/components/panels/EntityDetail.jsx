@@ -2,6 +2,8 @@ import React from 'react'
 import { useEntityStore } from '../../store/entityStore.js'
 import { useModuleStore } from '../../store/moduleStore.js'
 import { useUiStore } from '../../store/uiStore.js'
+import { useVaultStore } from '../../store/vaultStore.js'
+import { buildObsidianUri, resolveNoteLink, readNote, writeEntityNote } from '../../persistence/obsidianVault.js'
 import EntityBadge from '../ui/EntityBadge.jsx'
 import HyperlinkText from '../ui/HyperlinkText.jsx'
 
@@ -124,17 +126,14 @@ export default function EntityDetail({ entityId }) {
         )}
 
         {/* ── External links ──────────────────────────────────────── */}
-        {(entity.obsidianLink || entity.pdfReference) && (
-          <Section label="References">
-            {entity.obsidianLink && (
-              <ObsidianLink path={entity.obsidianLink} />
-            )}
-            {entity.pdfReference && (
-              <p className="text-xs text-slate-400">
-                PDF: {entity.pdfReference.file}
-                {entity.pdfReference.page && ` — p.${entity.pdfReference.page}`}
-              </p>
-            )}
+        <ReferencesSection entity={entity} entities={entities} />
+
+        {entity.pdfReference && (
+          <Section label="PDF">
+            <p className="text-xs text-slate-400">
+              {entity.pdfReference.file}
+              {entity.pdfReference.page && ` — p.${entity.pdfReference.page}`}
+            </p>
           </Section>
         )}
 
@@ -181,23 +180,91 @@ function Section({ label, children }) {
   )
 }
 
-function ObsidianLink({ path }) {
-  const href = `obsidian://open?file=${encodeURIComponent(path)}`
-  const isSafe = href.startsWith('obsidian://')
+// Obsidian references: link opens via the URI scheme (vault-qualified when a
+// vault is connected); the note body renders inline when the vault has it.
+// With a vault connected and no note yet, entity notes can be written back.
+function ReferencesSection({ entity, entities }) {
+  const vaultHandle = useVaultStore((s) => s.vaultHandle)
+  const vaultName = useVaultStore((s) => s.vaultName)
+  const noteIndex = useVaultStore((s) => s.noteIndex)
+  const updateEntity = useEntityStore((s) => s.updateEntity)
 
-  const handleClick = (e) => {
-    e.preventDefault()
-    if (isSafe) window.open(href, '_blank', 'noreferrer')
+  // preview is keyed by note path so stale text never shows for another note
+  const [preview, setPreview] = React.useState(null) // { path, text }
+  const [writing, setWriting] = React.useState(false)
+
+  const resolvedPath = entity.obsidianLink && noteIndex
+    ? resolveNoteLink(noteIndex, entity.obsidianLink)
+    : null
+
+  React.useEffect(() => {
+    if (!vaultHandle || !resolvedPath) return
+    let cancelled = false
+    readNote(vaultHandle, resolvedPath)
+      .then((text) => {
+        if (cancelled) return
+        // strip frontmatter for the preview
+        const body = text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+        setPreview({
+          path: resolvedPath,
+          text: body.slice(0, 600) + (body.length > 600 ? '…' : ''),
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [vaultHandle, resolvedPath])
+
+  const previewText = preview?.path === resolvedPath ? preview.text : null
+
+  const handleWriteNote = async () => {
+    if (!vaultHandle || writing) return
+    setWriting(true)
+    try {
+      const { path } = await writeEntityNote(vaultHandle, entity, entities)
+      updateEntity(entity.id, { obsidianLink: path })
+      // refresh the index so the new note resolves immediately
+      const { indexVault } = await import('../../persistence/obsidianVault.js')
+      useVaultStore.getState().setVault(vaultHandle, await indexVault(vaultHandle))
+    } finally {
+      setWriting(false)
+    }
   }
 
+  if (!entity.obsidianLink && !vaultHandle) return null
+
   return (
-    <button
-      onClick={handleClick}
-      className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors"
-    >
-      <span>⬡</span>
-      <span className="truncate">{path}</span>
-    </button>
+    <Section label="Obsidian">
+      {entity.obsidianLink ? (
+        <>
+          <button
+            onClick={() => window.open(
+              buildObsidianUri(vaultName, resolvedPath ?? entity.obsidianLink),
+              '_blank', 'noreferrer',
+            )}
+            className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors"
+          >
+            <span>⬡</span>
+            <span className="truncate">{entity.obsidianLink}</span>
+          </button>
+          {vaultHandle && !resolvedPath && (
+            <p className="text-[10px] text-amber-500/70 mt-1">note not found in connected vault</p>
+          )}
+          {previewText && (
+            <pre className="mt-1.5 text-[11px] text-slate-400 whitespace-pre-wrap leading-relaxed bg-slate-800/50 border border-slate-700/50 rounded px-2 py-1.5 max-h-48 overflow-y-auto font-sans">
+              {previewText}
+            </pre>
+          )}
+        </>
+      ) : (
+        <button
+          onClick={handleWriteNote}
+          disabled={writing}
+          className="text-xs px-2 py-1 rounded border border-violet-800/60 hover:border-violet-600 text-violet-300/80 hover:text-violet-200 transition-colors disabled:opacity-40"
+        >
+          {writing ? 'Writing…' : '⬡ Write note to vault'}
+        </button>
+      )}
+    </Section>
   )
 }
 
