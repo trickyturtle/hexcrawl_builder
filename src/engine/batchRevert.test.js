@@ -60,6 +60,19 @@ describe('applyBatchRevert — recorded batches', () => {
     expect(hexes['0,0'].entityIds).toEqual(['user-added'])
   })
 
+  it('strips multi-hex footprints from every hex they span', () => {
+    const s = makeState()
+    s.hexes['2,0'] = { ...s.hexes['2,0'], entityIds: ['ent-a'] } // footprint extension
+    const withFootprint = {
+      ...batch,
+      placements: { 'ent-a': '0,0' },
+      footprints: { 'ent-a': ['0,0', '2,0'] },
+    }
+    const { hexes } = applyBatchRevert(withFootprint, s.hexes, [])
+    expect(hexes['0,0'].entityIds).toEqual([])
+    expect(hexes['2,0']).toBeUndefined() // added hex, now empty → removed
+  })
+
   it('tolerates placements pointing at hexes that no longer exist', () => {
     const stale = { ...batch, placements: { 'ent-a': '99,99' } }
     expect(() => applyBatchRevert(stale, makeState().hexes, [])).not.toThrow()

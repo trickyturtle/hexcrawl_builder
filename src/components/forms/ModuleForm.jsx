@@ -41,6 +41,7 @@ function initialForm(existing) {
 export default function ModuleForm({ moduleId }) {
   const isNew = moduleId === 'new'
   const existing = useModuleStore((s) => s.modules[isNew ? null : moduleId])
+  const allModules = useModuleStore((s) => s.modules)
   const addModule = useModuleStore((s) => s.addModule)
   const updateModule = useModuleStore((s) => s.updateModule)
   const removeModule = useModuleStore((s) => s.removeModule)
@@ -334,6 +335,38 @@ export default function ModuleForm({ moduleId }) {
               </div>
             </Field>
 
+            <Field label="Related Modules">
+              {Object.values(allModules).filter((m) => m.id !== moduleId).length === 0 ? (
+                <p className="text-xs text-slate-600 italic">No other modules yet</p>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {Object.values(allModules)
+                    .filter((m) => m.id !== moduleId)
+                    .map((m) => {
+                      const linked = (form.moduleRelationships ?? []).includes(m.id)
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => set('moduleRelationships', linked
+                            ? form.moduleRelationships.filter((id) => id !== m.id)
+                            : [...(form.moduleRelationships ?? []), m.id])}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                            linked
+                              ? 'border-blue-500 text-blue-300 bg-blue-900/30'
+                              : 'border-slate-600 text-slate-500 hover:border-slate-400'
+                          }`}
+                        >
+                          {m.name || 'Unnamed'}
+                        </button>
+                      )
+                    })}
+                </div>
+              )}
+              <p className="text-[10px] text-slate-600 mt-1">
+                Related modules are placed near each other (soft constraint between their entry points)
+              </p>
+            </Field>
+
             <Field label="Obsidian Note">
               <input
                 type="text"
@@ -367,33 +400,54 @@ export default function ModuleForm({ moduleId }) {
             {[...moduleEntities, ...linkedEntities].length === 0 ? (
               <p className="text-xs text-slate-600 italic">No entities yet.</p>
             ) : (
+              <>
               <ul className="space-y-1">
-                {[...moduleEntities, ...linkedEntities].map((entity) => (
-                  <li key={entity.id} className="flex items-center gap-2">
-                    <button
-                      onClick={() => startEditingEntity(entity.id)}
-                      className="flex-1 text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-700/50 transition-colors min-w-0"
-                    >
-                      <EntityBadge subclass={entity.subclass} />
-                      <span className="text-xs text-slate-200 truncate flex-1">
-                        {entity.name || <span className="italic text-slate-500">Unnamed</span>}
-                      </span>
-                      {entity.locale && (
-                        <span className="text-[10px] text-slate-500 shrink-0 px-1.5 py-0.5 rounded bg-slate-700/60">
-                          {entity.locale}
-                        </span>
-                      )}
-                    </button>
-                    {!isNew && (
+                {[...moduleEntities, ...linkedEntities].map((entity) => {
+                  const isEntry = (form.entryPoints ?? []).includes(entity.id)
+                  return (
+                    <li key={entity.id} className="flex items-center gap-1">
                       <button
-                        onClick={() => removeEntityFromModule(moduleId, entity.id)}
-                        className="text-slate-700 hover:text-red-400 transition-colors px-1 text-xs"
-                        title="Remove from module"
-                      >✕</button>
-                    )}
-                  </li>
-                ))}
+                        onClick={() => set('entryPoints', isEntry
+                          ? form.entryPoints.filter((id) => id !== entity.id)
+                          : [...(form.entryPoints ?? []), entity.id])}
+                        className={`px-1 text-sm transition-colors ${
+                          isEntry ? 'text-amber-400' : 'text-slate-700 hover:text-amber-500'
+                        }`}
+                        title={isEntry ? 'Entry point — click to unset' : 'Mark as entry point'}
+                      >
+                        {isEntry ? '★' : '☆'}
+                      </button>
+                      <button
+                        onClick={() => startEditingEntity(entity.id)}
+                        className="flex-1 text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-700/50 transition-colors min-w-0"
+                      >
+                        <EntityBadge subclass={entity.subclass} />
+                        <span className="text-xs text-slate-200 truncate flex-1">
+                          {entity.name || <span className="italic text-slate-500">Unnamed</span>}
+                        </span>
+                        {entity.locale && (
+                          <span className="text-[10px] text-slate-500 shrink-0 px-1.5 py-0.5 rounded bg-slate-700/60">
+                            {entity.locale}
+                          </span>
+                        )}
+                      </button>
+                      {!isNew && (
+                        <button
+                          onClick={() => removeEntityFromModule(moduleId, entity.id)}
+                          className="text-slate-700 hover:text-red-400 transition-colors px-1 text-xs"
+                          title="Remove from module"
+                        >✕</button>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
+              {(form.entryPoints ?? []).length > 0 && (
+                <p className="text-[10px] text-slate-600 mt-1.5">
+                  ★ entry points anchor this module's connections to related modules
+                </p>
+              )}
+              </>
             )}
           </>
         )}

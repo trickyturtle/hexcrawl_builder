@@ -30,6 +30,8 @@ export const DEFAULT_HEX = {
   magic: 0,       // 0–3, from magicDensity
   anomaly: false, // biome adjacency broken by weirdness (dimensional anomaly)
   tags: [],       // free-form GM tags ('cleared', 'lair', …)
+  factionIds: [], // factions/nations with territory here (generated)
+  religionIds: [], // religions with presence here (generated)
 }
 
 export const TERRAIN_TYPES = [

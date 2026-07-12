@@ -7,6 +7,7 @@ import EntityBadge from '../ui/EntityBadge.jsx'
 import { TERRAIN_TYPES, BIOME_TYPES, DEFAULT_HEX } from '../../data/schemas/defaultSchemas.js'
 import { biomeForTerrain, elevationForTerrain } from '../../engine/generator/terrainGenerator.js'
 import { createHexAt, getNeighborIds, parseHexId } from '../../engine/generator/hexGrid.js'
+import { colorForId } from '../map/overlayColors.js'
 
 const FOG_OPTIONS = [
   { value: 'unknown',  label: 'Unknown' },
@@ -29,10 +30,20 @@ export default function HexDetailPanel({ hexId }) {
   const selectEntity = useUiStore((s) => s.selectEntity)
   const selectHex = useUiStore((s) => s.selectHex)
 
+  const logEvent = useHexStore((s) => s.logEvent)
+
   const [assignQuery, setAssignQuery] = useState('')
   const [showAssign, setShowAssign] = useState(false)
   const [editTerrain, setEditTerrain] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [eventInput, setEventInput] = useState('')
+
+  const addEvent = () => {
+    const description = eventInput.trim()
+    if (!description) return
+    logEvent(hexId, { description, timestamp: new Date().toISOString() })
+    setEventInput('')
+  }
 
   // Changing terrain re-derives biome/elevation defaults; both stay editable
   const handleTerrainChange = (terrain) => {
@@ -235,6 +246,50 @@ export default function HexDetailPanel({ hexId }) {
           </div>
         </Section>
 
+        {/* ── Territory ───────────────────────────────────────────── */}
+        {((hex.factionIds ?? []).length > 0 || (hex.religionIds ?? []).length > 0) && (
+          <Section label="Territory">
+            <div className="space-y-1">
+              {(hex.factionIds ?? []).map((fid) => {
+                const f = entities[fid]
+                if (!f) return null
+                return (
+                  <button
+                    key={fid}
+                    onClick={() => selectEntity(fid)}
+                    className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white hover:underline"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
+                      style={{ background: `rgba(${colorForId(fid)},0.7)` }}
+                    />
+                    {f.name || 'Unnamed'}
+                    <span className="text-[10px] text-slate-600">{f.subclass}</span>
+                  </button>
+                )
+              })}
+              {(hex.religionIds ?? []).map((rid) => {
+                const r = entities[rid]
+                if (!r) return null
+                return (
+                  <button
+                    key={rid}
+                    onClick={() => selectEntity(rid)}
+                    className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white hover:underline"
+                  >
+                    <span
+                      className="w-2 h-2 shrink-0"
+                      style={{ background: `rgb(${colorForId(rid)})` }}
+                    />
+                    {r.name || 'Unnamed'}
+                    <span className="text-[10px] text-slate-600">Religion</span>
+                  </button>
+                )
+              })}
+            </div>
+          </Section>
+        )}
+
         {/* ── Fog of war ──────────────────────────────────────────── */}
         <Section label="Visibility">
           <div className="flex gap-1">
@@ -249,6 +304,29 @@ export default function HexDetailPanel({ hexId }) {
                 }`}
               >
                 {label}
+              </button>
+            ))}
+          </div>
+          {/* Reveal by radius — GM convenience for party movement */}
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-[10px] text-slate-600">Reveal radius</span>
+            {[1, 2, 3].map((radius) => (
+              <button
+                key={radius}
+                onClick={() => {
+                  for (const other of Object.values(allHexes)) {
+                    const dq = other.q - hex.q
+                    const dr = other.r - hex.r
+                    const dist = (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2
+                    if (dist <= radius && other.fog !== 'known') {
+                      updateHex(other.id, { fog: 'known' })
+                    }
+                  }
+                }}
+                className="text-xs px-2 py-0.5 rounded border border-slate-600 text-slate-400 hover:border-green-600 hover:text-green-400 transition-colors"
+                title={`Set all hexes within ${radius} to Known`}
+              >
+                {radius}
               </button>
             ))}
           </div>
@@ -346,25 +424,40 @@ export default function HexDetailPanel({ hexId }) {
         })()}
 
         {/* ── Event log ───────────────────────────────────────────── */}
-        {hex.eventLog?.length > 0 && (
-          <Section label={`Events (${hex.eventLog.length})`}>
-            <ol className="space-y-1.5">
+        <Section label={`Events${hex.eventLog?.length ? ` (${hex.eventLog.length})` : ''}`}>
+          {hex.eventLog?.length > 0 && (
+            <ol className="space-y-1.5 mb-2">
               {hex.eventLog.map((ev, i) => (
                 <li key={i} className="flex gap-2 text-xs">
                   <span className="text-slate-600 select-none">{i + 1}.</span>
-                  <span className="text-slate-400">
+                  <span className="text-slate-400 flex-1">
                     {typeof ev === 'string' ? ev : ev.description ?? JSON.stringify(ev)}
                   </span>
                   {ev.timestamp && (
-                    <span className="text-slate-600 ml-auto shrink-0">
+                    <span className="text-slate-600 shrink-0" title={new Date(ev.timestamp).toLocaleString()}>
                       {new Date(ev.timestamp).toLocaleDateString()}
                     </span>
                   )}
                 </li>
               ))}
             </ol>
-          </Section>
-        )}
+          )}
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={eventInput}
+              onChange={(e) => setEventInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEvent() } }}
+              placeholder="Record an event… (faction takes hex, ruin cleared)"
+              className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+            <button
+              onClick={addEvent}
+              disabled={!eventInput.trim()}
+              className="text-xs px-2 py-1 rounded border border-slate-600 hover:border-slate-400 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
+            >Log</button>
+          </div>
+        </Section>
       </div>
     </div>
   )

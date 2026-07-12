@@ -20,12 +20,15 @@ export function applyBatchRevert(batch, hexes, routes, { modules = {}, entities 
     }
   }
 
-  // 1. Un-place the batch's entities
+  // 1. Un-place the batch's entities (multi-hex footprints span several hexes)
   if (recorded) {
     for (const [eid, hid] of Object.entries(batch.placements)) {
-      const hex = next[hid]
-      if (!hex) continue
-      next[hid] = { ...hex, entityIds: (hex.entityIds ?? []).filter((id) => id !== eid) }
+      const span = batch.footprints?.[eid] ?? [hid]
+      for (const spanHid of span) {
+        const hex = next[spanHid]
+        if (!hex) continue
+        next[spanHid] = { ...hex, entityIds: (hex.entityIds ?? []).filter((id) => id !== eid) }
+      }
     }
   } else {
     for (const [hid, hex] of Object.entries(next)) {

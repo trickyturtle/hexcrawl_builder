@@ -12,6 +12,7 @@ import {
   generateHexes,
 } from '../../engine/generator/terrainGenerator.js'
 import { applyBiomeAdjacency } from '../../engine/solver/biomeRules.js'
+import { generateTerritories } from '../../engine/generator/territoryGenerator.js'
 import { applyBatchRevert } from '../../engine/batchRevert.js'
 
 export default function ModuleBrowser() {
@@ -143,7 +144,7 @@ export default function ModuleBrowser() {
 
     let result
     try {
-      result = solve({ batchEntities, batchModules: pendingModules, hexes: workingHexes, placedEntityHexes, worldParams })
+      result = solve({ batchEntities, batchModules: pendingModules, allModules: modules, hexes: workingHexes, placedEntityHexes, worldParams })
     } catch (err) {
       result = {
         success: false,
@@ -176,12 +177,18 @@ export default function ModuleBrowser() {
 
     // Apply placements to hexStore — group by hex first to avoid last-write-wins overwrite
     const appliedPlacements = {}
+    const appliedFootprints = {}
     if (result.placements && Object.keys(result.placements).length > 0) {
-      // Build hex → [entityId…] map so we write each hex exactly once
+      // Build hex → [entityId…] map so we write each hex exactly once.
+      // Multi-hex footprints put the entity in every hex it spans.
       const hexEntityMap = {}
       for (const [entityId, hexId] of Object.entries(result.placements)) {
-        if (!hexEntityMap[hexId]) hexEntityMap[hexId] = []
-        hexEntityMap[hexId].push(entityId)
+        const span = result.footprints?.[entityId] ?? [hexId]
+        if (span.length > 1) appliedFootprints[entityId] = span
+        for (const hid of span) {
+          if (!hexEntityMap[hid]) hexEntityMap[hid] = []
+          hexEntityMap[hid].push(entityId)
+        }
       }
       for (const [hexId, newEntityIds] of Object.entries(hexEntityMap)) {
         const hex = workingHexes[hexId]
@@ -190,7 +197,10 @@ export default function ModuleBrowser() {
         const toAdd = newEntityIds.filter((id) => !existing.includes(id))
         if (toAdd.length > 0) {
           const merged = [...existing, ...toAdd]
-          for (const id of toAdd) appliedPlacements[id] = hexId
+          for (const id of toAdd) {
+            // primary hex only — footprint spans are tracked separately
+            if (result.placements[id] === hexId) appliedPlacements[id] = hexId
+          }
           // Update the local snapshot so terrain propagation sees the right state
           workingHexes[hexId] = { ...hex, entityIds: merged }
           updateHex(hexId, { entityIds: merged })
@@ -207,8 +217,24 @@ export default function ModuleBrowser() {
 
     if (result.routes?.length > 0) addRoutes(result.routes)
 
+    // Recompute faction/nation territories and religion spread across the map
+    // now that the batch's entities are placed. Diff-only patches; priors are
+    // recorded so batch revert restores the previous territory state.
+    const territoryPatches = generateTerritories(
+      workingHexes,
+      useEntityStore.getState().entities,
+      [...routes, ...(result.routes ?? [])],
+      worldParams,
+    )
+    for (const [hid, patch] of Object.entries(territoryPatches)) {
+      recordPriorValues(hid, patch)
+      workingHexes[hid] = { ...workingHexes[hid], ...patch }
+      updateHex(hid, patch)
+    }
+
     commitBatch({
       placements: appliedPlacements,
+      footprints: appliedFootprints,
       routeIds: (result.routes ?? []).map((r) => r.id),
       addedHexIds,
       hexPatches: undoPatches,

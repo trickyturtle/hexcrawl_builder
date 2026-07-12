@@ -44,11 +44,23 @@ const BATCH_COLORS = [
   'rgba(249,115,22,0.45)',   // orange
 ]
 
+// Seasonal tints on land hexes (winter snow, autumn foliage, spring growth)
+const SEASON_TINT = {
+  winter: () => 'rgba(190,215,240,0.30)',
+  autumn: (terrain) => (terrain === 'forest' || terrain === 'hills') ? 'rgba(217,119,6,0.25)' : null,
+  spring: (terrain) => (terrain === 'plains' || terrain === 'forest') ? 'rgba(132,204,22,0.12)' : null,
+  summer: () => null,
+}
+
 // fogVisible: whether the fog-of-war overlay is active
 // dangerVisible/magicVisible: tint hexes by their danger/magic rating (0–3)
 // batchIndex: -1 = no batch tint; 0+ = color from BATCH_COLORS
+// factionColor/nationColor: "r,g,b" strings from the political overlays
+// religionKey: "r,g,b|r,g,b" marker colors for religions present
+// season: current season name or null
 const HexCell = memo(function HexCell({
   hex, selected, fogVisible = false, dangerVisible = false, magicVisible = false, batchIndex = -1,
+  factionColor = null, nationColor = null, nationBorder = false, religionKey = null, season = null,
 }) {
   const { id, corners, terrain, fog, entityIds, danger = 0, magic = 0, anomaly = false } = hex
   const entityCount = entityIds?.length ?? 0
@@ -95,6 +107,36 @@ const HexCell = memo(function HexCell({
         />
       )}
 
+      {/* Seasonal tint on land */}
+      {season && terrain !== 'ocean' && terrain !== 'coast' && effectiveFog !== 'unknown' && (() => {
+        const tint = SEASON_TINT[season]?.(terrain)
+        return tint ? (
+          <polygon points={points} fill={tint} stroke="none" style={{ pointerEvents: 'none' }} />
+        ) : null
+      })()}
+
+      {/* Faction territory tint */}
+      {factionColor && effectiveFog !== 'unknown' && (
+        <polygon
+          points={points}
+          fill={`rgba(${factionColor},0.32)`}
+          stroke="none"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+
+      {/* Nation territory — light tint, solid stroke on the outer border */}
+      {nationColor && effectiveFog !== 'unknown' && (
+        <polygon
+          points={points}
+          fill={`rgba(${nationColor},0.15)`}
+          stroke={nationBorder ? `rgb(${nationColor})` : 'none'}
+          strokeWidth={nationBorder ? 2 : 0}
+          strokeLinejoin="round"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+
       {/* Danger overlay — red tint scaled by rating */}
       {dangerVisible && danger > 0 && effectiveFog !== 'unknown' && (
         <polygon
@@ -128,6 +170,21 @@ const HexCell = memo(function HexCell({
           style={{ pointerEvents: 'none' }}
         />
       )}
+
+      {/* Religion presence markers — small squares along the hex top */}
+      {religionKey && effectiveFog !== 'unknown' && religionKey.split('|').slice(0, 3).map((c, i) => (
+        <rect
+          key={i}
+          x={cx - 4 + i * 5}
+          y={cy - 11}
+          width={3.6}
+          height={3.6}
+          fill={`rgb(${c})`}
+          stroke="rgba(0,0,0,0.5)"
+          strokeWidth={0.5}
+          style={{ pointerEvents: 'none' }}
+        />
+      ))}
 
       {/* Entity presence dot */}
       {entityCount > 0 && effectiveFog !== 'unknown' && (

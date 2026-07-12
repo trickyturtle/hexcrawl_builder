@@ -116,6 +116,29 @@ describe('solve', () => {
     }
   })
 
+  it('grows contiguous land footprints for multi-hex locations', () => {
+    const hexes = makeHexes(200)
+    const entity = makeEntity({ name: 'Sprawling Ruin', hexFootprint: 4 })
+    const result = solve({ batchEntities: [entity], hexes, worldParams: {} })
+    expect(result.success).toBe(true)
+
+    const span = result.footprints[entity.id]
+    expect(span).toHaveLength(4)
+    expect(span[0]).toBe(result.placements[entity.id]) // primary first
+    for (const hid of span) expect(hexes[hid].terrain).not.toBe('ocean')
+    // contiguity: every hex is within 1 of some other hex in the span
+    for (const hid of span) {
+      const h = hexes[hid]
+      const near = span.some((other) => {
+        if (other === hid) return false
+        const o = hexes[other]
+        const dq = h.q - o.q, dr = h.r - o.r
+        return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2 === 1
+      })
+      expect(near).toBe(true)
+    }
+  })
+
   it('honors hard proximity requirements written with the schema field name entityId', () => {
     const hexes = makeHexes(200)
     const anchor = makeEntity({ name: 'Anchor' })

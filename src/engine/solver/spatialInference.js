@@ -55,6 +55,44 @@ export function inferModuleDistanceConstraints(modules, batchEntities, worldPara
   return { constraints, warnings }
 }
 
+// Convert module-to-module relationships into soft proximity constraints
+// between the modules' representative entities (first entry point, falling
+// back to the module's first entity). Related adventures end up near each
+// other without a hard requirement. Works across batches: if the target
+// module is already committed, its representative is in placedEntityHexes
+// and the constraint anchors the new module to it.
+export function inferModuleRelationshipConstraints(batchModules, allModules = {}) {
+  const constraints = []
+  const seen = new Set()
+
+  const representative = (mod) =>
+    mod?.entryPoints?.[0] ?? (mod?.entities ?? [])[0] ?? null
+
+  for (const mod of batchModules) {
+    const fromRep = representative(mod)
+    if (!fromRep) continue
+    for (const raw of (mod.moduleRelationships ?? [])) {
+      const targetId = typeof raw === 'string' ? raw : raw?.moduleId
+      const target = allModules[targetId]
+      const toRep = representative(target)
+      if (!toRep || toRep === fromRep) continue
+
+      const pairKey = [fromRep, toRep].sort().join('|')
+      if (seen.has(pairKey)) continue
+      seen.add(pairKey)
+
+      constraints.push({
+        fromEntityId: fromRep,
+        toEntityId: toRep,
+        minHexes: 0,
+        maxHexes: 8,
+        isHard: false,
+      })
+    }
+  }
+  return constraints
+}
+
 // Infer spatial constraints from entity relationship objects.
 // Returns an array of { fromEntityId, toEntityId, minHexes, maxHexes, isHard }.
 export function inferSpatialConstraints(relationships) {

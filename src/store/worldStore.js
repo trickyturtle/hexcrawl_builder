@@ -16,6 +16,7 @@ export const useWorldStore = create((set) => ({
   biomeDistribution: {},
   systemPreset: 'OSR',
   travelSpeedAssumptions: { ...SYSTEM_PRESETS.OSR.travelSpeed },
+  currentSeason: null, // null | 'spring' | 'summer' | 'autumn' | 'winter'
 
   setParam: (key, value) => set({ [key]: value }),
   setParams: (params) => set(params),

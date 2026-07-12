@@ -1,5 +1,5 @@
-import { hexDistance } from '../generator/hexGrid.js'
-import { inferSpatialConstraints, inferModuleDistanceConstraints } from './spatialInference.js'
+import { hexDistance, getNeighborIds } from '../generator/hexGrid.js'
+import { inferSpatialConstraints, inferModuleDistanceConstraints, inferModuleRelationshipConstraints } from './spatialInference.js'
 import { scorePlacement } from './scoring.js'
 import { generateRoutes } from '../generator/routeGenerator.js'
 import { terrainForBiome, TERRAFORMABLE_BIOMES } from './biomeRules.js'
@@ -14,9 +14,10 @@ const MAX_ITERATIONS = 5000
 // placedEntityHexes — {entityId: hexId} for already-committed entities
 // worldParams      — from worldStore (hexSizeMiles + travel speeds convert
 //                    module text distances to hexes)
-export function solve({ batchEntities, batchModules = [], hexes, placedEntityHexes = {}, worldParams = {} }) {
+export function solve({ batchEntities, batchModules = [], allModules = {}, hexes, placedEntityHexes = {}, worldParams = {} }) {
   const { constraints: moduleConstraints, warnings } =
     inferModuleDistanceConstraints(batchModules, batchEntities, worldParams)
+  const moduleRelConstraints = inferModuleRelationshipConstraints(batchModules, allModules)
 
   if (!batchEntities.length) {
     return { success: true, placements: {}, conflicts: [], routes: [], warnings }
@@ -24,7 +25,11 @@ export function solve({ batchEntities, batchModules = [], hexes, placedEntityHex
 
   const hexArray = Object.values(hexes)
   const allRelationships = batchEntities.flatMap((e) => e.relationships ?? [])
-  const spatialConstraints = [...inferSpatialConstraints(allRelationships), ...moduleConstraints]
+  const spatialConstraints = [
+    ...inferSpatialConstraints(allRelationships),
+    ...moduleConstraints,
+    ...moduleRelConstraints,
+  ]
 
   // Map for O(1) entity lookup during scoring (used for module-cohesion bonus)
   const entityMap = Object.fromEntries(batchEntities.map((e) => [e.id, e]))
@@ -89,10 +94,53 @@ export function solve({ batchEntities, batchModules = [], hexes, placedEntityHex
   const placedList = batchEntities.filter((e) => newPlacements[e.id])
   const routes = generateRoutes(hexes, newPlacements, placedList)
 
-  if (conflicts.length === 0) {
-    return { success: true, placements: newPlacements, conflicts: [], routes, warnings, terraformed }
+  // Multi-hex footprints: Locations/GeographicFeatures spanning several hexes
+  // claim adjacent land around their primary placement
+  const footprints = {}
+  for (const e of placedList) {
+    if ((e.hexFootprint ?? 1) > 1) {
+      footprints[e.id] = growFootprint(newPlacements[e.id], e.hexFootprint, hexes)
+    }
   }
-  return { success: false, partial: true, placements: newPlacements, conflicts, routes, warnings, terraformed }
+
+  if (conflicts.length === 0) {
+    return { success: true, placements: newPlacements, conflicts: [], routes, warnings, terraformed, footprints }
+  }
+  return { success: false, partial: true, placements: newPlacements, conflicts, routes, warnings, terraformed, footprints }
+}
+
+// BFS outward from the primary hex, claiming up to `size` land hexes total.
+// Same-terrain neighbors are preferred so a sprawling dungeon stays in its
+// hills rather than half-spilling onto plains.
+function growFootprint(primaryHexId, size, hexes) {
+  const primary = hexes[primaryHexId]
+  if (!primary) return [primaryHexId]
+  const claimed = [primaryHexId]
+  const claimedSet = new Set(claimed)
+  let frontier = [primaryHexId]
+
+  while (claimed.length < size && frontier.length > 0) {
+    const candidates = []
+    for (const hid of frontier) {
+      const hex = hexes[hid]
+      for (const nid of getNeighborIds(hex.q, hex.r)) {
+        const nHex = hexes[nid]
+        if (!nHex || nHex.terrain === 'ocean' || claimedSet.has(nid)) continue
+        candidates.push({ nid, sameTerrain: nHex.terrain === primary.terrain ? 0 : 1 })
+      }
+    }
+    if (candidates.length === 0) break
+    candidates.sort((a, b) => a.sameTerrain - b.sameTerrain || a.nid.localeCompare(b.nid))
+    frontier = []
+    for (const { nid } of candidates) {
+      if (claimed.length >= size) break
+      if (claimedSet.has(nid)) continue
+      claimedSet.add(nid)
+      claimed.push(nid)
+      frontier.push(nid)
+    }
+  }
+  return claimed
 }
 
 // ── Greedy fallback ─────────────────────────────────────────────────────────
